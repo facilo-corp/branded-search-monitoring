@@ -1,0 +1,144 @@
+name: Update branded search
+
+on:
+  schedule:
+    - cron: '17 0 * * 1' # Monday 09:17 JST
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: '検証後にPagesへ公開（初回確認はfalse）'
+        type: boolean
+        default: false
+
+permissions: {}
+concurrency:
+  group: branded-search-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'facilo-corp/branded-search-monitoring' && github.ref == 'refs/heads/main' && vars.AUTOMATION_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || vars.SCHEDULE_ENABLED == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+    outputs:
+      sha256: ${{ steps.digest.outputs.sha256 }}
+      revision: ${{ steps.commit.outputs.revision }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Test aggregation and failure handling
+        run: python -m unittest discover -s tests -v
+      - name: Check configuration
+        env:
+          SHEET_ID: ${{ vars.SHEET_ID }}
+          WIF_PROVIDER: ${{ vars.GOOGLE_WIF_PROVIDER }}
+          SERVICE_ACCOUNT: ${{ vars.GOOGLE_SERVICE_ACCOUNT }}
+        run: |
+          python -c "import os; assert all(os.environ.get(k) for k in ('SHEET_ID', 'WIF_PROVIDER', 'SERVICE_ACCOUNT')), 'Google configuration is incomplete'"
+      - name: Authenticate with short-lived Google credentials
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GOOGLE_WIF_PROVIDER }}
+          service_account: ${{ vars.GOOGLE_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/spreadsheets.readonly
+          create_credentials_file: false
+          export_environment_variables: false
+      - name: Read and build (no Sheet writes)
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          SHEET_ID: ${{ vars.SHEET_ID }}
+        run: |
+          python src/fetch_sheet.py --output "$RUNNER_TEMP/branded-source.json"
+          python src/dashboard.py --input "$RUNNER_TEMP/branded-source.json"
+          python src/verify_site.py --file site/index.html
+      - name: Remove private source snapshot
+        if: always()
+        run: |
+          python -c "import os,pathlib; pathlib.Path(os.environ['RUNNER_TEMP'],'branded-source.json').unlink(missing_ok=True)"
+      - name: Digest and public build summary
+        id: digest
+        run: |
+          python - <<'PY'
+          import hashlib, os, sys
+          from pathlib import Path
+          sys.path.insert(0, 'src')
+          from dashboard import extract_metadata
+          payload = Path('site/index.html').read_bytes()
+          meta = extract_metadata(payload.decode('utf-8'))
+          digest = hashlib.sha256(payload).hexdigest()
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('sha256=' + digest + '\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write(f"期間: {meta['periodStart']} ～ {meta['periodEnd']} / {meta['weeks']}週\n\n")
+              f.write(f"表示回数: {meta['impressions']:,} / クリック: {meta['clicks']:,}\n\n")
+              f.write(f"元データ最終日: {meta['sourceLatestDay']}\n\nSHA256: `{digest}`\n")
+          PY
+      - name: Commit only the validated public HTML
+        id: commit
+        if: github.event_name == 'schedule' || inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- site/index.html
+          if ! git diff --cached --quiet; then
+            git commit -m 'Update branded search dashboard'
+            gh auth setup-git
+            git push origin HEAD:main
+          fi
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Upload validated site only
+        if: github.event_name == 'schedule' || inputs.publish
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: site
+          retention-days: 1
+
+  deploy:
+    needs: build
+    if: github.event_name == 'schedule' || inputs.publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
+
+  verify:
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the generated revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.build.outputs.revision }}
+          persist-credentials: false
+      - name: Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Verify exact delivery and noindex
+        env:
+          EXPECTED_SHA: ${{ needs.build.outputs.sha256 }}
+        run: python src/verify_site.py --url https://facilo-corp.github.io/branded-search-monitoring/ --sha256 "$EXPECTED_SHA"

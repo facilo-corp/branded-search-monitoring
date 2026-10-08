@@ -1,0 +1,560 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow, noarchive"><meta name=viewport content="width=device-width,initial-scale=1"><title>指名検索 imp 推移 — Facilo</title><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}</style><style>.source-card{font-size:12px;color:var(--text-secondary)}.source-card summary{cursor:pointer;font-size:13px;font-weight:600}.method-body{line-height:1.8;padding-top:10px}.method-body p{margin:8px 0}.legend-item{min-height:28px}.legend-item:focus-visible{outline:2px solid var(--c-imp);outline-offset:3px}.chart-scroll-hint{display:none;color:var(--text-muted);font-size:11px;margin:8px 0 0}@media(max-width:760px){.chart-scroll-hint{display:block}}@media(max-width:640px){.stat:last-child{grid-column:1/-1}}</style><style>.update-status{display:flex;gap:6px 18px;flex-wrap:wrap;margin-top:12px;font-size:11px;color:var(--text-muted)}.stale-notice{margin-top:12px;padding:10px 12px;border-radius:6px;background:#fff1d6;color:#765016;font-size:12px}.stale-notice[hidden]{display:none}</style></head><body>
+<style>
+  :root {
+    --surface: #F7F8FC;
+    --card: #FFFFFF;
+    --border: #E2E5F0;
+    --text-primary: #1A1F36;
+    --text-secondary: #5A6178;
+    --text-muted: #8E95AD;
+    --grid: #E8EAF2;
+    --c-imp: #4B6BF5;
+    --c-imp-area: rgba(75, 107, 245, 0.10);
+    --c-sma: #D4890F;
+    --c-median: #1A9A7A;
+    --c-p25: #C04E6A;
+    --hover-bg: #FFFFFF;
+    --hover-border: #D0D5E8;
+    --hover-shadow: 0 4px 16px rgba(26, 31, 54, 0.10);
+    --def-bg: #F1F3F9;
+    --def-border: #E2E5F0;
+    --ev-autumn: rgba(245, 130, 50, 0.12);
+    --ev-autumn-line: rgba(245, 130, 50, 0.50);
+    --ev-spring: rgba(100, 180, 80, 0.12);
+    --ev-spring-line: rgba(100, 180, 80, 0.50);
+    --ev-pr: rgba(150, 120, 200, 0.50);
+    --ev-label: #5A6178;
+    --growth-pos: #1A8A5A;
+    --growth-neg: #D04040;
+    --cat-exact: #4B6BF5;
+    --cat-corporate: #2AA198;
+    --cat-product: #D4890F;
+    --cat-navigation: #1A9A7A;
+    --cat-recruitment: #8B5CF6;
+    --cat-news: #E07B39;
+    --cat-reputation: #C04E6A;
+    --cat-area: #6366F1;
+    --cat-other: #8E95AD;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --surface: #0E1117; --card: #171B26; --border: #282D3E;
+      --text-primary: #E4E7F0; --text-secondary: #9BA1B8; --text-muted: #636A82;
+      --grid: #232839;
+      --c-imp: #6B8AFF; --c-imp-area: rgba(107, 138, 255, 0.08);
+      --c-sma: #F0A830; --c-median: #3CC8A0; --c-p25: #E06888;
+      --hover-bg: #1E2233; --hover-border: #353B52;
+      --hover-shadow: 0 4px 16px rgba(0,0,0,0.35);
+      --def-bg: #1A1F2E; --def-border: #282D3E;
+      --ev-autumn: rgba(245, 150, 70, 0.10);
+      --ev-autumn-line: rgba(245, 150, 70, 0.45);
+      --ev-spring: rgba(120, 200, 100, 0.10);
+      --ev-spring-line: rgba(120, 200, 100, 0.45);
+      --ev-pr: rgba(180, 150, 230, 0.45);
+      --ev-label: #9BA1B8;
+      --growth-pos: #4BC990; --growth-neg: #F07060;
+      --cat-exact: #6B8AFF;
+      --cat-corporate: #3DD8CC;
+      --cat-product: #F0A830;
+      --cat-navigation: #3CC8A0;
+      --cat-recruitment: #A78BFA;
+      --cat-news: #F0923A;
+      --cat-reputation: #E06888;
+      --cat-area: #818CF8;
+      --cat-other: #636A82;
+    }
+  }
+  :root[data-theme="dark"] {
+    --surface: #0E1117; --card: #171B26; --border: #282D3E;
+    --text-primary: #E4E7F0; --text-secondary: #9BA1B8; --text-muted: #636A82;
+    --grid: #232839;
+    --c-imp: #6B8AFF; --c-imp-area: rgba(107, 138, 255, 0.08);
+    --c-sma: #F0A830; --c-median: #3CC8A0; --c-p25: #E06888;
+    --hover-bg: #1E2233; --hover-border: #353B52;
+    --hover-shadow: 0 4px 16px rgba(0,0,0,0.35);
+    --def-bg: #1A1F2E; --def-border: #282D3E;
+    --ev-autumn: rgba(245, 150, 70, 0.10);
+    --ev-autumn-line: rgba(245, 150, 70, 0.45);
+    --ev-spring: rgba(120, 200, 100, 0.10);
+    --ev-spring-line: rgba(120, 200, 100, 0.45);
+    --ev-pr: rgba(180, 150, 230, 0.45);
+    --ev-label: #9BA1B8;
+    --growth-pos: #4BC990; --growth-neg: #F07060;
+    --cat-exact: #6B8AFF;
+    --cat-corporate: #3DD8CC;
+    --cat-product: #F0A830;
+    --cat-navigation: #3CC8A0;
+    --cat-recruitment: #A78BFA;
+    --cat-news: #F0923A;
+    --cat-reputation: #E06888;
+    --cat-area: #818CF8;
+    --cat-other: #636A82;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--surface); color: var(--text-primary);
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    padding: 24px 20px;
+  }
+  .container { max-width: 1000px; margin: 0 auto; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 28px 28px 24px;
+  }
+  .card + .card { margin-top: 16px; }
+  .header { margin-bottom: 20px; }
+  .header h1 { font-size: 18px; font-weight: 650; letter-spacing: -0.01em; }
+  .header .subtitle { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+  .chart-wrap { position: relative; width: 100%; overflow-x: auto; }
+  .chart-wrap svg { display: block; width: 100%; height: auto; min-width: 700px; }
+  .tooltip {
+    position: absolute; pointer-events: none;
+    background: var(--hover-bg); border: 1px solid var(--hover-border);
+    border-radius: 8px; padding: 10px 14px;
+    box-shadow: var(--hover-shadow);
+    font-size: 12px; line-height: 1.7; opacity: 0;
+    transition: opacity 0.12s ease; z-index: 10; white-space: nowrap;
+  }
+  .tooltip.visible { opacity: 1; }
+  .tooltip-week { font-weight: 600; margin-bottom: 2px; }
+  .tooltip-row { display: flex; justify-content: space-between; gap: 20px; }
+  .tooltip-label { color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
+  .tooltip-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .tooltip-val { font-weight: 600; }
+  .tooltip-event { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); font-size: 11px; color: var(--ev-label); }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 6px 16px;
+    margin-top: 14px; padding-left: 4px;
+  }
+  .legend-item {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--text-secondary);
+    cursor: pointer; user-select: none;
+    opacity: 1; transition: opacity 0.15s;
+  }
+  .legend-item.off { opacity: 0.35; }
+  .legend-swatch { width: 16px; height: 3px; border-radius: 2px; }
+  .legend-swatch.dashed {
+    background: repeating-linear-gradient(90deg, var(--color) 0, var(--color) 5px, transparent 5px, transparent 8px);
+    height: 2px;
+  }
+  .legend-sep { width: 1px; height: 14px; background: var(--border); margin: 0 4px; }
+  .legend-ev { width: 14px; height: 10px; border-radius: 2px; }
+
+  .stats-strip {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 1px; background: var(--border); border-radius: 8px;
+    overflow: hidden; margin-top: 20px;
+  }
+  .stat { background: var(--card); padding: 13px 14px; text-align: center; }
+  .stat-label {
+    font-size: 10.5px; font-weight: 500; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px;
+  }
+  .stat-value { font-size: 19px; font-weight: 650; letter-spacing: -0.02em; }
+  .stat-value.pos { color: var(--growth-pos); }
+  .stat-value.neg { color: var(--growth-neg); }
+  .stat-detail { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
+
+  .defs {
+    margin-top: 20px; border: 1px solid var(--def-border);
+    border-radius: 10px; overflow: hidden;
+  }
+  .defs-toggle {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; background: var(--def-bg);
+    cursor: pointer; user-select: none;
+    font-size: 13px; font-weight: 600; color: var(--text-secondary);
+    border: none; width: 100%;
+  }
+  .defs-toggle:hover { color: var(--text-primary); }
+  .defs-arrow { transition: transform 0.2s; font-size: 11px; }
+  .defs.open .defs-arrow { transform: rotate(180deg); }
+  .defs-body { display: none; padding: 0 16px 16px; background: var(--def-bg); }
+  .defs.open .defs-body { display: block; }
+  .def-item { margin-top: 14px; }
+  .def-item:first-child { margin-top: 4px; }
+  .def-name {
+    font-size: 13px; font-weight: 650; display: flex;
+    align-items: center; gap: 6px; margin-bottom: 3px;
+  }
+  .def-name .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .def-desc { font-size: 12.5px; line-height: 1.65; color: var(--text-secondary); padding-left: 16px; }
+  .def-formula {
+    display: inline-block; font-family: 'Menlo', 'Consolas', monospace;
+    font-size: 11.5px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 6px; margin: 2px 0; color: var(--text-primary);
+  }
+  .def-usecase {
+    margin-top: 4px; font-size: 12px; color: var(--text-muted);
+    padding-left: 16px; font-style: italic;
+  }
+
+  .cat-row {
+    display: grid;
+    grid-template-columns: 140px 1fr 70px;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .cat-row:last-child { border-bottom: none; }
+  .cat-label-col { min-width: 0; }
+  .cat-name {
+    font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .cat-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .cat-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; padding-left: 14px; }
+  .cat-bar-col { min-width: 0; }
+  .cat-bar-wrap {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .cat-bar-track {
+    flex: 1; height: 20px; background: var(--def-bg);
+    border-radius: 4px; overflow: hidden; position: relative;
+  }
+  .cat-bar-fill {
+    height: 100%; border-radius: 4px;
+    transition: width 0.4s ease;
+  }
+  .cat-bar-keywords {
+    display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; padding-left: 0;
+  }
+  .cat-kw-tag {
+    font-size: 10.5px; color: var(--text-secondary);
+    background: var(--def-bg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 6px;
+    white-space: nowrap;
+  }
+  .cat-val-col {
+    text-align: right;
+  }
+  .cat-imp { font-size: 14px; font-weight: 650; }
+  .cat-pct { font-size: 11px; color: var(--text-muted); }
+  .cat-ctr-note {
+    margin-top: 14px; padding: 10px 14px;
+    background: var(--def-bg); border-radius: 8px;
+    font-size: 12px; color: var(--text-secondary); line-height: 1.6;
+  }
+  .cat-ctr-note strong { color: var(--text-primary); font-weight: 600; }
+
+  @media (max-width: 640px) {
+    body { padding: 12px; }
+    .card { padding: 18px 16px 16px; }
+    .header h1 { font-size: 16px; }
+    .stat-value { font-size: 16px; }
+    .stats-strip { grid-template-columns: repeat(2, 1fr); }
+    .cat-row { grid-template-columns: 110px 1fr 60px; gap: 8px; }
+    .cat-name { font-size: 12px; }
+    .cat-imp { font-size: 13px; }
+  }
+</style>
+
+<div class="container">
+  <div class="card">
+    <div class="header">
+      <h1>指名検索 インプレッション推移</h1>
+      <div class="subtitle">GSC「facilo」「ファシロ」を含む検索 ─ 2025/03/10 〜 2026/09/27（週次合計・81週）</div>
+      <div class="update-status"><span>データ最終日：2026/09/29</span><span>ページ更新：2026/10/08 11:00 JST</span></div>
+      <div id="staleNotice" class="stale-notice" role="status" hidden>元データの最終日から14日を超えています。最新の取得状況を確認してください。</div>
+    </div>
+    <div class="chart-wrap" id="chartWrap">
+      <div id="chartContainer"></div>
+      <div class="tooltip" id="tooltip"></div>
+    </div>
+    <p class="chart-scroll-hint">グラフは左右にスクロールできます</p><div class="legend" id="legend"></div>
+    <div class="stats-strip" id="stats"></div>
+
+    <div class="defs" id="defs">
+      <button class="defs-toggle" onclick="document.getElementById('defs').classList.toggle('open')">
+        <span>指標の定義</span>
+        <span class="defs-arrow">&#9660;</span>
+      </button>
+      <div class="defs-body">
+        <div class="def-item">
+          <div class="def-name"><span class="dot" style="background:var(--c-imp)"></span>週次 imp（実測値）</div>
+          <div class="def-desc">その週（月〜日）の指名検索インプレッション合計。</div>
+        </div>
+        <div class="def-item">
+          <div class="def-name"><span class="dot" style="background:var(--c-sma)"></span>12週 移動平均（SMA-12w）</div>
+          <div class="def-desc">直近12週の単純平均。マクロのトレンド方向が見える。</div>
+          <div class="def-usecase">→ 「認知は四半期単位で伸びているか？」の判断に使う</div>
+        </div>
+        <div class="def-item">
+          <div class="def-name"><span class="dot" style="background:var(--c-median)"></span>8週 ローリング中央値（Median-8w）</div>
+          <div class="def-desc">直近8週の中央値。スパイクに引っ張られない「典型的な週」の水準。</div>
+          <div class="def-usecase">→ 施策前後で「普段の週」がどれだけ上がったかを比較するのに最適</div>
+        </div>
+        <div class="def-item">
+          <div class="def-name"><span class="dot" style="background:var(--c-p25)"></span>8週 P25（下位25%点）</div>
+          <div class="def-desc">直近8週のうち下から2番目の値。「悪い週でもこれだけは出る」という床。</div>
+          <div class="def-usecase">→ 通常時の水準を見る補助指標。季節性や施策の影響と併せて判断する</div>
+        </div>
+        <div class="def-item" style="margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border);">
+          <div class="def-name"><span class="dot" style="background:var(--ev-autumn-line); border-radius: 2px; width: 12px; height: 12px;"></span>施策オーバーレイ</div>
+          <div class="def-desc">
+            <strong>秋CP（オレンジ帯）</strong>: 2025/11/5〜12/7。CM+YouTube+タクシー+OOH ~7,000万円。<br>
+            <strong>PRラッシュ（紫線）</strong>: 2025/9月。事業用CL→賃貸CL→DXリサーチの3連打。<br>
+            <strong>春CP（緑帯）</strong>: 2026/5/11〜5/31。タクシー+YouTube+正直不動産タイアップ。
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="header">
+      <h1>検索意図カテゴリ分析</h1>
+      <div class="subtitle">週次グラフと同じ期間：2025/03/10 〜 2026/09/27 ─ 累計 85,278 imp</div>
+    </div>
+    <div id="catChart"></div>
+    <div class="cat-ctr-note"><strong>ナビゲーション（ログイン）</strong>：5,807 imp・CTR 90.1%。ログイン目的の検索傾向を見る補助指標です。<br><strong>評判</strong>：1,681 imp・CTR 7.6%。検索結果での比較・情報収集を含むため、クリック率だけで導入意欲は判断できません。</div>
+  </div>
+  <div class="card source-card"><details><summary>データの期間・集計方法</summary><div class="method-body">
+<p><strong>対象：</strong>GSCで「facilo」「ファシロ」を含む検索。日付はGSCのPacific Time基準、週は月曜〜日曜です。</p>
+<p><strong>期間：</strong>2025/03/10 〜 2026/09/27。7日分揃う週だけを使い、週次グラフとカテゴリ分析の対象日を揃えています。元データの最終日は2026/09/29です。開始端の1日と最終端の2日は期間外です。</p>
+<p><strong>集計：</strong>日付・検索語の重複と欠損を検証し、日次から週次を再計算。表示回数・クリック数は日次とカテゴリの合計を照合しています。集計日時：2026/10/08 11:00 JST。</p>
+<p><strong>カテゴリ：</strong>検索語から社名を除いた語で分類。複数条件に当てはまる場合は、ブランド指名→ログイン→採用→評判→ニュース→プロダクト→企業調査→その他の順に判定します。元の8分類を引き継いで判定条件を整理したため、以前のカテゴリ構成比との比較には再集計が必要です。</p>
+<p><strong>P25：</strong>直近8週を小さい順に並べた2番目の値。P25成長率は、最初の8個と直近8個のP25の平均を比較しています。</p>
+<p><strong>更新：</strong>毎週月曜9:17ごろ（日本時間）に元シートを読み取り、検証後に更新する設定です。元データに問題がある場合は直前の正常なページを維持します。</p>
+</div></details></div>
+</div>
+
+<script id="dashboard-meta" type="application/json">{"periodStart":"2025-03-10","periodEnd":"2026-09-27","sourceLatestDay":"2026-09-29","weeks":81,"impressions":85278,"clicks":34570,"excludedStartDays":1,"excludedEndDays":2,"builtAt":"2026-10-08T02:00:41+00:00","staleAfterDays":14}</script>
+<script>
+const RAW = [["2025-03-10",798,333],["2025-03-17",687,286],["2025-03-24",626,232],["2025-03-31",622,232],["2025-04-07",685,259],["2025-04-14",718,279],["2025-04-21",687,234],["2025-04-28",451,182],["2025-05-05",589,256],["2025-05-12",663,245],["2025-05-19",712,262],["2025-05-26",822,308],["2025-06-02",804,282],["2025-06-09",880,325],["2025-06-16",777,240],["2025-06-23",769,285],["2025-06-30",727,310],["2025-07-07",786,295],["2025-07-14",705,270],["2025-07-21",824,335],["2025-07-28",791,298],["2025-08-04",732,315],["2025-08-11",461,242],["2025-08-18",838,334],["2025-08-25",826,314],["2025-09-01",866,335],["2025-09-08",843,300],["2025-09-15",871,305],["2025-09-22",772,323],["2025-09-29",993,414],["2025-10-06",1021,395],["2025-10-13",1127,464],["2025-10-20",1310,495],["2025-10-27",1098,374],["2025-11-03",1483,479],["2025-11-10",1377,631],["2025-11-17",1671,909],["2025-11-24",1465,751],["2025-12-01",1526,636],["2025-12-08",1292,503],["2025-12-15",1063,362],["2025-12-22",812,299],["2025-12-29",321,119],["2026-01-05",1040,413],["2026-01-12",1192,450],["2026-01-19",1102,416],["2026-01-26",1183,436],["2026-02-02",1130,438],["2026-02-09",1174,443],["2026-02-16",1271,457],["2026-02-23",1179,390],["2026-03-02",1256,438],["2026-03-09",1854,841],["2026-03-16",1524,655],["2026-03-23",1306,535],["2026-03-30",1333,533],["2026-04-06",1389,602],["2026-04-13",1408,578],["2026-04-20",1278,526],["2026-04-27",942,413],["2026-05-04",969,412],["2026-05-11",1472,602],["2026-05-18",1547,606],["2026-05-25",1427,696],["2026-06-01",1362,642],["2026-06-08",1330,596],["2026-06-15",1251,540],["2026-06-22",1200,510],["2026-06-29",1264,522],["2026-07-06",1318,579],["2026-07-13",1271,543],["2026-07-20",1195,488],["2026-07-27",1214,493],["2026-08-03",1115,466],["2026-08-10",573,224],["2026-08-17",1126,481],["2026-08-24",1046,463],["2026-08-31",1101,477],["2026-09-07",1160,492],["2026-09-14",1886,713],["2026-09-21",999,414]];
+
+const data = RAW.map(d => ({ date: d[0], imp: d[1], clicks: d[2] }));
+
+const EVENTS = [
+  { type: 'line', date: '2025-09-08', label: 'PR: 事業用CL', color: 'ev-pr' },
+  { type: 'line', date: '2025-09-15', label: 'PR: 賃貸CL+住宅新報', color: 'ev-pr' },
+  { type: 'line', date: '2025-09-29', label: 'PR: DXリサーチ', color: 'ev-pr' },
+  { type: 'band', start: '2025-11-03', end: '2025-12-08', label: '秋CP (CM+Taxi+YT+OOH ~7000万)', color: 'autumn' },
+  { type: 'band', start: '2026-05-11', end: '2026-05-25', label: '春CP (Taxi+YT+正直不動産)', color: 'spring' },
+];
+const EVENT_POINTS = {
+  '2025-09-08': 'PR: 事業用CL(9/12)',
+  '2025-09-15': 'PR: 賃貸CL(9/17)+住宅新報(9/23)',
+  '2025-09-29': 'PR: DXリサーチ(9/29)',
+  '2025-11-03': 'CM発表会(11/5)+名古屋サイネージ',
+  '2025-11-10': 'タクシー+YT+バナー+フクラス全開始',
+  '2025-11-17': '★全媒体同時(名古屋集中11/17-21)',
+  '2025-11-24': '出稿継続',
+  '2025-12-01': 'タクシー+フクラス 12/7終了',
+  '2025-12-08': '秋CP終了後',
+  '2026-05-11': 'タクシー+YT開始+正直不動産公開',
+  '2026-05-18': '~5/20 YouTube停止',
+  '2026-05-25': 'タクシー5/31終了',
+  '2026-08-10': 'お盆週',
+};
+
+function rollingMean(arr, w) { return arr.map((_, i) => i < w-1 ? null : Math.round(arr.slice(i-w+1,i+1).reduce((a,b)=>a+b,0)/w)); }
+function rollingMedian(arr, w) {
+  return arr.map((_, i) => { if(i<w-1) return null; const s=arr.slice(i-w+1,i+1).slice().sort((a,b)=>a-b); const m=Math.floor(s.length/2); return s.length%2?s[m]:Math.round((s[m-1]+s[m])/2); });
+}
+function rollingP25(arr, w) { return arr.map((_, i) => { if(i<w-1) return null; const s=arr.slice(i-w+1,i+1).slice().sort((a,b)=>a-b); return s[1]; }); }
+
+const imps = data.map(d => d.imp);
+const sma12 = rollingMean(imps, 12);
+const med8 = rollingMedian(imps, 8);
+const p25_8 = rollingP25(imps, 8);
+
+const totalImp = imps.reduce((a,b)=>a+b,0);
+const avgImp = Math.round(totalImp / imps.length);
+const peakImp = Math.max(...imps);
+const peakIdx = imps.indexOf(peakImp);
+const first8avg = Math.round(imps.slice(0,8).reduce((a,b)=>a+b,0)/8);
+const last8avg = Math.round(imps.slice(-8).reduce((a,b)=>a+b,0)/8);
+const growthPct = Math.round(((last8avg-first8avg)/first8avg)*100);
+const p25vals = p25_8.filter(v => v !== null);
+const p25first = p25vals.slice(0,8).reduce((a,b)=>a+b,0)/8;
+const p25last = p25vals.slice(-8).reduce((a,b)=>a+b,0)/8;
+const p25growth = Math.round(((p25last-p25first)/p25first)*100);
+
+const visible = { imp: true, sma: true, median: true, p25: true, events: true };
+const SERIES = [
+  { key: 'imp', label: '週次 imp', color: '--c-imp', solid: true },
+  { key: 'sma', label: '12w 移動平均', color: '--c-sma', solid: true },
+  { key: 'median', label: '8w 中央値', color: '--c-median', solid: false },
+  { key: 'p25', label: '8w P25', color: '--c-p25', solid: false },
+];
+
+function dateToIdx(ds) { for(let i=0;i<data.length;i++) if(data[i].date>=ds) return i; return data.length-1; }
+
+function buildLegend() {
+  const el = document.getElementById('legend');
+  let h = SERIES.map(s => {
+    const cls = visible[s.key]?'':' off';
+    const st = s.solid ? `background:var(${s.color})` : `--color:var(${s.color})`;
+    const sw = s.solid ? 'legend-swatch' : 'legend-swatch dashed';
+    return `<div class="legend-item${cls}" data-key="${s.key}"><span class="${sw}" style="${st}"></span>${s.label}</div>`;
+  }).join('');
+  h += '<div class="legend-sep"></div>';
+  h += `<div class="legend-item${visible.events?'':' off'}" data-key="events"><span class="legend-ev" style="background:var(--ev-autumn);border:1px solid var(--ev-autumn-line)"></span>施策イベント</div>`;
+  el.innerHTML = h;
+  el.querySelectorAll('.legend-item').forEach(item => {
+    item.addEventListener('click', () => { visible[item.dataset.key] = !visible[item.dataset.key]; item.classList.toggle('off'); render(); });
+  });
+}
+
+function render() {
+  const wrap = document.getElementById('chartWrap');
+  const container = document.getElementById('chartContainer');
+  const tooltip = document.getElementById('tooltip');
+  const W = Math.max(wrap.clientWidth, 700);
+  const H = Math.min(420, Math.max(320, W * 0.42));
+  const mg = { top: 28, right: 20, bottom: 40, left: 52 };
+  const cw = W - mg.left - mg.right;
+  const ch = H - mg.top - mg.bottom;
+
+  const allVis = [];
+  if(visible.imp) allVis.push(...imps);
+  if(visible.sma) sma12.forEach(v=>{if(v!==null)allVis.push(v);});
+  if(visible.median) med8.forEach(v=>{if(v!==null)allVis.push(v);});
+  if(visible.p25) p25_8.forEach(v=>{if(v!==null)allVis.push(v);});
+  const maxV = Math.ceil((Math.max(...(allVis.length?allVis:imps))*1.08)/200)*200;
+
+  const x = i => mg.left + (i/(data.length-1))*cw;
+  const y = v => mg.top + ch - (v/maxV)*ch;
+  const xDate = d => x(dateToIdx(d));
+
+  const yStep = maxV<=1200?200:400;
+  const yTicks = []; for(let v=0;v<=maxV;v+=yStep) yTicks.push(v);
+
+  const months = []; let lastM = '';
+  data.forEach((d,i)=>{ const mm=d.date.substring(0,7); if(mm!==lastM){months.push({i,label:fmtMonth(d.date)});lastM=mm;} });
+  function fmtMonth(ds){ const[yr,mo]=ds.split('-'); const n=parseInt(mo,10); return n===1?`${yr.slice(2)}年1月`:`${n}月`; }
+  function linePath(vals){ let d='',st=false; vals.forEach((v,i)=>{if(v===null)return; if(!st){d=`M ${x(i)} ${y(v)}`;st=true;} else d+=` L ${x(i)} ${y(v)}`;}); return d; }
+
+  let s = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  if(visible.events){
+    EVENTS.forEach(ev=>{
+      if(ev.type==='band'){
+        const x1=xDate(ev.start),x2=xDate(ev.end);
+        const fill=ev.color==='autumn'?'var(--ev-autumn)':'var(--ev-spring)';
+        const stroke=ev.color==='autumn'?'var(--ev-autumn-line)':'var(--ev-spring-line)';
+        s+=`<rect x="${x1}" y="${mg.top}" width="${x2-x1}" height="${ch}" fill="${fill}" rx="3"/>`;
+        s+=`<line x1="${x1}" x2="${x1}" y1="${mg.top}" y2="${mg.top+ch}" stroke="${stroke}" stroke-width="1"/>`;
+        s+=`<line x1="${x2}" x2="${x2}" y1="${mg.top}" y2="${mg.top+ch}" stroke="${stroke}" stroke-width="1"/>`;
+        s+=`<text x="${(x1+x2)/2}" y="${mg.top-6}" text-anchor="middle" fill="var(--ev-label)" font-size="10" font-family="system-ui" font-weight="500">${ev.color==='autumn'?'秋CP':'春CP'}</text>`;
+      } else {
+        const lx=xDate(ev.date);
+        s+=`<line x1="${lx}" x2="${lx}" y1="${mg.top}" y2="${mg.top+ch}" stroke="var(--ev-pr)" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+      }
+    });
+    s+=`<text x="${xDate('2025-09-15')}" y="${mg.top-6}" text-anchor="middle" fill="var(--ev-label)" font-size="10" font-family="system-ui" font-weight="500">PRラッシュ</text>`;
+  }
+  yTicks.forEach(v=>{s+=`<line x1="${mg.left}" x2="${W-mg.right}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)" stroke-width="1"/>`;});
+  if(visible.imp){
+    let area=`M ${x(0)} ${y(imps[0])}`; imps.forEach((v,i)=>{if(i>0)area+=` L ${x(i)} ${y(v)}`;});
+    area+=` L ${x(data.length-1)} ${y(0)} L ${x(0)} ${y(0)} Z`;
+    s+=`<path d="${area}" fill="var(--c-imp-area)"/>`;
+    s+=`<path d="${linePath(imps)}" fill="none" stroke="var(--c-imp)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
+  if(visible.sma) s+=`<path d="${linePath(sma12)}" fill="none" stroke="var(--c-sma)" stroke-width="2" stroke-linejoin="round"/>`;
+  if(visible.median) s+=`<path d="${linePath(med8)}" fill="none" stroke="var(--c-median)" stroke-width="2" stroke-dasharray="6 3" stroke-linejoin="round"/>`;
+  if(visible.p25) s+=`<path d="${linePath(p25_8)}" fill="none" stroke="var(--c-p25)" stroke-width="2" stroke-dasharray="3 3" stroke-linejoin="round"/>`;
+
+  const li = data.length-1;
+  if(visible.imp) s+=`<circle cx="${x(li)}" cy="${y(imps[li])}" r="4" fill="var(--c-imp)" stroke="var(--card)" stroke-width="2"/>`;
+  if(visible.sma&&sma12[li]!==null) s+=`<circle cx="${x(li)}" cy="${y(sma12[li])}" r="3.5" fill="var(--c-sma)" stroke="var(--card)" stroke-width="2"/>`;
+  if(visible.median&&med8[li]!==null) s+=`<circle cx="${x(li)}" cy="${y(med8[li])}" r="3.5" fill="var(--c-median)" stroke="var(--card)" stroke-width="2"/>`;
+  if(visible.p25&&p25_8[li]!==null) s+=`<circle cx="${x(li)}" cy="${y(p25_8[li])}" r="3.5" fill="var(--c-p25)" stroke="var(--card)" stroke-width="2"/>`;
+
+  yTicks.forEach(v=>{s+=`<text x="${mg.left-8}" y="${y(v)+4}" text-anchor="end" fill="var(--text-muted)" font-size="11" font-family="system-ui">${v.toLocaleString()}</text>`;});
+  months.forEach(({i:mi,label})=>{s+=`<text x="${x(mi)}" y="${H-8}" text-anchor="start" fill="var(--text-muted)" font-size="11" font-family="system-ui">${label}</text>`;});
+  const hitW = cw/data.length;
+  data.forEach((_,i)=>{s+=`<rect x="${x(i)-hitW/2}" y="${mg.top}" width="${hitW}" height="${ch}" fill="transparent" data-i="${i}"/>`;});
+  s += `</svg>`;
+  container.innerHTML = s;
+
+  const svg = container.querySelector('svg');
+  const cross = document.createElementNS('http://www.w3.org/2000/svg','line');
+  cross.setAttribute('stroke','var(--text-muted)'); cross.setAttribute('stroke-width','1');
+  cross.setAttribute('stroke-dasharray','3 3'); cross.setAttribute('y1',mg.top); cross.setAttribute('y2',mg.top+ch);
+  cross.style.opacity='0'; cross.style.transition='opacity 0.1s'; svg.appendChild(cross);
+  const dots={};
+  SERIES.forEach(ser=>{
+    const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    dot.setAttribute('r',ser.key==='imp'?'5':'4'); dot.setAttribute('fill',`var(${ser.color})`);
+    dot.setAttribute('stroke','var(--card)'); dot.setAttribute('stroke-width','2.5');
+    dot.style.opacity='0'; dot.style.transition='opacity 0.1s'; svg.appendChild(dot); dots[ser.key]=dot;
+  });
+  function getVal(k,i){ if(k==='imp')return imps[i]; if(k==='sma')return sma12[i]; if(k==='median')return med8[i]; if(k==='p25')return p25_8[i]; return null; }
+
+  svg.addEventListener('mousemove', e=>{
+    const rect=svg.getBoundingClientRect(); const ratio=W/rect.width; const mx=(e.clientX-rect.left)*ratio;
+    let ci=0,minD=Infinity; data.forEach((_,i)=>{const d=Math.abs(x(i)-mx); if(d<minD){minD=d;ci=i;}});
+    cross.setAttribute('x1',x(ci)); cross.setAttribute('x2',x(ci)); cross.style.opacity='0.4';
+    SERIES.forEach(ser=>{const v=getVal(ser.key,ci); if(v!==null&&visible[ser.key]){dots[ser.key].setAttribute('cx',x(ci));dots[ser.key].setAttribute('cy',y(v));dots[ser.key].style.opacity='1';}else dots[ser.key].style.opacity='0';});
+    const d=data[ci]; const[yr,mo,dy]=d.date.split('-');
+    let html=`<div class="tooltip-week">${yr}/${mo}/${dy}週</div>`;
+    SERIES.forEach(ser=>{if(!visible[ser.key])return; const v=getVal(ser.key,ci); if(v===null)return; html+=`<div class="tooltip-row"><span class="tooltip-label"><span class="tooltip-dot" style="background:var(${ser.color})"></span>${ser.label}</span><span class="tooltip-val">${v.toLocaleString()}</span></div>`;});
+    if(visible.imp) html+=`<div class="tooltip-row"><span class="tooltip-label">clicks</span><span class="tooltip-val">${d.clicks.toLocaleString()}</span></div>`;
+    const evNote=EVENT_POINTS[d.date]; if(evNote&&visible.events) html+=`<div class="tooltip-event">${evNote}</div>`;
+    tooltip.innerHTML=html; tooltip.classList.add('visible');
+    const tipR=tooltip.getBoundingClientRect(); const wrapR=wrap.getBoundingClientRect();
+    let tx=(x(ci)/ratio)+14; if(tx+tipR.width>wrapR.width-8) tx=(x(ci)/ratio)-tipR.width-14;
+    let ty=Math.max(0,(y(imps[ci])/ratio)-tipR.height/2); ty=Math.min(ty,wrapR.height-tipR.height);
+    tooltip.style.left=tx+'px'; tooltip.style.top=ty+'px';
+  });
+  svg.addEventListener('mouseleave',()=>{cross.style.opacity='0';Object.values(dots).forEach(d=>d.style.opacity='0');tooltip.classList.remove('visible');});
+
+  const pk=data[peakIdx].date.split('-');
+  document.getElementById('stats').innerHTML=`
+    <div class="stat"><div class="stat-label">期間合計</div><div class="stat-value">${totalImp.toLocaleString()}</div><div class="stat-detail">${data.length}週</div></div>
+    <div class="stat"><div class="stat-label">週平均</div><div class="stat-value">${avgImp.toLocaleString()}</div></div>
+    <div class="stat"><div class="stat-label">ピーク</div><div class="stat-value">${peakImp.toLocaleString()}</div><div class="stat-detail">${pk[0]}/${pk[1]}/${pk[2]}週</div></div>
+    <div class="stat"><div class="stat-label">imp成長率</div><div class="stat-value ${growthPct>=0?'pos':'neg'}">${growthPct>=0?'+':''}${growthPct}%</div><div class="stat-detail">初期8w→直近8w</div></div>
+    <div class="stat"><div class="stat-label">P25成長率</div><div class="stat-value ${p25growth>=0?'pos':'neg'}">${p25growth>=0?'+':''}${p25growth}%</div><div class="stat-detail">床の底上げ</div></div>`;
+}
+
+buildLegend(); render(); window.addEventListener('resize', render);
+
+const CATS = [{"key":"exact","label":"ブランド指名","desc":"facilo / ファシロ のみ","imp":52586,"clicks":19069,"pct":61.7,"top":[],"color":"--cat-exact"},{"key":"corporate","label":"企業調査","desc":"会社情報・代表名","imp":11083,"clicks":3835,"pct":13.0,"top":["株式会社","とは","市川"],"color":"--cat-corporate"},{"key":"product","label":"プロダクト","desc":"サービス・料金・機能","imp":6730,"clicks":2388,"pct":7.9,"top":["不動産","料金","マーケットプレイス"],"color":"--cat-product"},{"key":"navigation","label":"ナビゲーション","desc":"ログイン・ログオン","imp":5807,"clicks":5231,"pct":6.8,"top":["ログイン"],"color":"--cat-navigation","ctr":"CTR 90.1%"},{"key":"recruitment","label":"採用","desc":"採用・求人・給与・職場情報","imp":4130,"clicks":2609,"pct":4.8,"top":["採用","年収","株式会社 求人"],"color":"--cat-recruitment"},{"key":"other","label":"その他","desc":"上記に当てはまらない検索","imp":1872,"clicks":1122,"pct":2.2,"top":["メンバー","事例","cm"],"color":"--cat-other"},{"key":"reputation","label":"評判","desc":"評判・口コミ","imp":1681,"clicks":127,"pct":2.0,"top":["評判","株式会社 評判"],"color":"--cat-reputation","ctr":"CTR 7.6%"},{"key":"news","label":"ニュース","desc":"資金調達・ニュース・note","imp":1389,"clicks":189,"pct":1.6,"top":["資金調達","note","調達"],"color":"--cat-news"}];
+
+function escapeHtml(value) { return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+const maxCatImp = Math.max(1, ...CATS.map(c => c.imp));
+const catEl = document.getElementById('catChart');
+let catHtml = '';
+CATS.forEach(c => {
+  const barW = Math.max(2, (c.imp / maxCatImp) * 100);
+  const kwTags = c.top.map(k => `<span class="cat-kw-tag">${escapeHtml(k)}</span>`).join('');
+  const ctrBadge = c.ctr ? `<span class="cat-kw-tag" style="color:var(${c.color});border-color:var(${c.color})">${c.ctr}</span>` : '';
+  catHtml += `<div class="cat-row">
+    <div class="cat-label-col">
+      <div class="cat-name"><span class="cat-dot" style="background:var(${c.color})"></span>${c.label}</div>
+      <div class="cat-desc">${c.desc}</div>
+    </div>
+    <div class="cat-bar-col">
+      <div class="cat-bar-wrap">
+        <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${barW}%;background:var(${c.color});opacity:0.75"></div></div>
+      </div>
+      <div class="cat-bar-keywords">${kwTags}${ctrBadge}</div>
+    </div>
+    <div class="cat-val-col">
+      <div class="cat-imp">${c.imp.toLocaleString()}</div>
+      <div class="cat-pct">${c.pct}%</div>
+    </div>
+  </div>`;
+});
+catEl.innerHTML = catHtml;
+const dashboardMeta = JSON.parse(document.getElementById('dashboard-meta').textContent);
+function updateFreshness(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {timeZone:'America/Los_Angeles',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(now);
+  const getPart = name => parts.find(p => p.type === name).value;
+  const today = `${getPart('year')}-${getPart('month')}-${getPart('day')}`;
+  const age = Math.floor((Date.parse(today+'T00:00:00Z') - Date.parse(dashboardMeta.sourceLatestDay+'T00:00:00Z'))/86400000);
+  document.getElementById('staleNotice').hidden = age <= dashboardMeta.staleAfterDays;
+}
+updateFreshness();
+setInterval(updateFreshness, 3600000);
+</script>
+</body></html>
