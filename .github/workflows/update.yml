@@ -9,6 +9,14 @@ on:
         description: '検証後にPagesへ公開（初回確認はfalse）'
         type: boolean
         default: false
+      gsc_compare:
+        description: 'GSC取得を元シートと照合（書込・公開なし）'
+        type: boolean
+        default: false
+      comparison_end_date:
+        description: '照合の取得終端 YYYY-MM-DD（空欄ならJSTの3日前）'
+        type: string
+        default: ''
 
 permissions: {}
 concurrency:
@@ -42,9 +50,59 @@ jobs:
           SHEET_ID: ${{ vars.SHEET_ID }}
           WIF_PROVIDER: ${{ vars.GOOGLE_WIF_PROVIDER }}
           SERVICE_ACCOUNT: ${{ vars.GOOGLE_SERVICE_ACCOUNT }}
+          COMPARE: ${{ inputs.gsc_compare }}
+          PUBLISH: ${{ inputs.publish }}
+          COLLECTOR: ${{ vars.GOOGLE_COLLECTOR_SERVICE_ACCOUNT }}
         run: |
           python -c "import os; assert all(os.environ.get(k) for k in ('SHEET_ID', 'WIF_PROVIDER', 'SERVICE_ACCOUNT')), 'Google configuration is incomplete'"
+          python -c "import os; c=os.environ.get('COMPARE')=='true'; assert not(c and os.environ.get('PUBLISH')=='true'), 'Compare mode cannot publish'; assert not c or os.environ.get('COLLECTOR'), 'Collector configuration is incomplete'"
+      - name: Authenticate collector for read-only comparison
+        if: github.event_name == 'workflow_dispatch' && inputs.gsc_compare
+        id: collector_auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GOOGLE_WIF_PROVIDER }}
+          service_account: ${{ vars.GOOGLE_COLLECTOR_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/webmasters.readonly,https://www.googleapis.com/auth/spreadsheets.readonly
+          create_credentials_file: false
+          export_environment_variables: false
+      - name: Collect and compare without writing
+        if: github.event_name == 'workflow_dispatch' && inputs.gsc_compare
+        env:
+          GOOGLE_ACCESS_TOKEN: ${{ steps.collector_auth.outputs.access_token }}
+          SHEET_ID: ${{ vars.SHEET_ID }}
+          COMPARISON_END_DATE: ${{ inputs.comparison_end_date }}
+        run: |
+          python - <<'PY'
+          import os, subprocess, sys
+          from pathlib import Path
+          folder = Path(os.environ['RUNNER_TEMP']) / 'branded-collection'
+          args = [sys.executable, 'src/collect_gsc.py', '--output-dir', str(folder)]
+          if os.environ.get('COMPARISON_END_DATE'):
+              args += ['--end-date', os.environ['COMPARISON_END_DATE']]
+          code = subprocess.call(args)
+          if code:
+              raise SystemExit(code)
+          subprocess.run([sys.executable, 'src/dashboard.py', '--input', str(folder / 'snapshot-candidate.json'), '--output', str(folder / 'candidate.html')], check=True)
+          subprocess.run([sys.executable, 'src/verify_site.py', '--file', str(folder / 'candidate.html')], check=True)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write('GSC取得・同期間照合・候補ページの検証に成功。シート書込・Pages公開はありません。\n')
+          PY
+      - name: Remove private comparison files
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.gsc_compare
+        run: |
+          python - <<'PY'
+          import os, shutil
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']).resolve()
+          target = root / 'branded-collection'
+          assert target.resolve().parent == root and not target.is_symlink()
+          if target.exists():
+              shutil.rmtree(target)
+          PY
       - name: Authenticate with short-lived Google credentials
+        if: '!inputs.gsc_compare'
         id: auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
@@ -55,6 +113,7 @@ jobs:
           create_credentials_file: false
           export_environment_variables: false
       - name: Read and build (no Sheet writes)
+        if: '!inputs.gsc_compare'
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
           SHEET_ID: ${{ vars.SHEET_ID }}
@@ -67,6 +126,7 @@ jobs:
         run: |
           python -c "import os,pathlib; pathlib.Path(os.environ['RUNNER_TEMP'],'branded-source.json').unlink(missing_ok=True)"
       - name: Digest and public build summary
+        if: '!inputs.gsc_compare'
         id: digest
         run: |
           python - <<'PY'
