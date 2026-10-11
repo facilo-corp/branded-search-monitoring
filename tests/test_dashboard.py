@@ -2,6 +2,8 @@ from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 import sys
+import json
+import re
 import tempfile
 import unittest
 
@@ -26,6 +28,59 @@ def fixture(count=112):
 
 
 class AggregationTests(unittest.TestCase):
+    def test_monthly_uses_complete_calendar_months_and_matching_categories(self):
+        result = aggregate(fixture(), NOW.date())
+        monthly = result['monthly']
+        self.assertEqual(monthly['rows'], [['2026-06-01', 300, 90], ['2026-07-01', 310, 93]])
+        self.assertEqual((monthly['periodStart'], monthly['periodEnd']), ('2026-06-01', '2026-07-31'))
+        self.assertEqual((monthly['excludedStartDays'], monthly['excludedEndDays']), (28, 23))
+        self.assertEqual((monthly['impressions'], monthly['clicks']), (610, 183))
+        cats = {c['key']: c for c in monthly['categories']}
+        self.assertEqual((cats['exact']['imp'], cats['navigation']['imp']), (366, 244))
+        self.assertEqual(sum(c['clicks'] for c in cats.values()), 183)
+        self.assertEqual((result['impressions'], result['weeks']), (1120, 16))
+
+    def test_month_boundaries_year_change_and_leap_day(self):
+        data = fixture(132)
+        start = date(2023, 11, 28)
+        for block in data['valueRanges']:
+            for row in block['values'][1:]:
+                offset = (date.fromisoformat(row[0]) - START).days
+                row[0] = (start + timedelta(days=offset)).isoformat()
+        # Feb 29 and Mar 1 are in the same week but must enter different months.
+        for day, extra in [('2024-02-29', 90), ('2024-03-01', 200)]:
+            next(r for r in data['valueRanges'][0]['values'][1:] if r[0] == day)[1] += extra
+            next(r for r in data['valueRanges'][1]['values'][1:] if r[0] == day and r[1] == 'facilo')[2] += extra
+        result = aggregate(data, date(2024, 4, 8))['monthly']
+        self.assertEqual(result['rows'], [['2023-12-01',310,93], ['2024-01-01',310,93],
+                                          ['2024-02-01',380,87], ['2024-03-01',510,93]])
+        self.assertEqual((result['excludedStartDays'], result['excludedEndDays']), (3,7))
+
+    def test_complete_zero_months_are_retained(self):
+        data = fixture()
+        for row in data['valueRanges'][0]['values'][1:]:
+            if row[0][:7] in ('2026-06', '2026-07'):
+                row[1:3] = [0,0]
+        data['valueRanges'][1]['values'] = [data['valueRanges'][1]['values'][0]] + [
+            row for row in data['valueRanges'][1]['values'][1:] if row[0][:7] not in ('2026-06', '2026-07')]
+        result = aggregate(data, NOW.date())['monthly']
+        self.assertEqual(result['rows'], [['2026-06-01',0,0], ['2026-07-01',0,0]])
+        self.assertEqual(result['impressions'], 0)
+        self.assertTrue(all(c['pct'] == 0 for c in result['categories']))
+
+    def test_monthly_history_loss_and_render_mismatch_rejected(self):
+        result = aggregate(fixture(), NOW.date())
+        html = render(result, (ROOT / 'template.html').read_text(encoding='utf-8'), NOW)
+        altered = deepcopy(result)
+        altered['monthly']['periodEnd'] = '2026-06-30'
+        with self.assertRaisesRegex(DataError, 'HISTORY_LOSS'):
+            guard_history(altered, html)
+        monthly = json.loads(re.search(r'const MONTHLY = (.*?);\n',html).group(1))
+        monthly['rows'][0][1] += 1
+        broken = re.sub(r'const MONTHLY = .*?;\n',lambda _: 'const MONTHLY = '+script_json(monthly)+';\n', html)
+        with self.assertRaisesRegex(DataError, 'RENDER_MISMATCH'):
+            validate_html(broken)
+
     def test_known_totals_and_same_period(self):
         result = aggregate(fixture(), NOW.date())
         self.assertEqual((result['weeks'], result['impressions'], result['clicks']), (16, 1120, 336))

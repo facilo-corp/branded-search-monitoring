@@ -109,10 +109,17 @@
   .header { margin-bottom: 20px; }
   .header h1 { font-size: 18px; font-weight: 650; letter-spacing: -0.01em; }
   .header .subtitle { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+  .heading-row { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+  .period-switch { display:inline-flex; gap:3px; padding:3px; border:1px solid var(--border); border-radius:8px; background:var(--def-bg); }
+  .period-switch button { border:0; border-radius:5px; background:transparent; color:var(--text-secondary); font:inherit; font-size:12px; font-weight:600; padding:7px 18px; min-height:34px; cursor:pointer; }
+  .period-switch button[aria-pressed="true"] { background:var(--card); color:var(--c-imp); box-shadow:0 1px 3px rgba(26,31,54,.08); }
+  .period-switch button:focus-visible { outline:2px solid var(--c-imp); outline-offset:2px; }
+  .period-note { font-size:11px; color:var(--text-secondary); line-height:1.6; margin-top:8px; }
+  button.legend-item { border:0; background:transparent; padding:0; font-family:inherit; }
   .chart-wrap { position: relative; width: 100%; overflow-x: auto; }
   .chart-wrap svg { display: block; width: 100%; height: auto; min-width: 700px; }
   .tooltip {
-    position: absolute; pointer-events: none;
+    position: absolute; top:0; left:0; pointer-events: none;
     background: var(--hover-bg); border: 1px solid var(--hover-border);
     border-radius: 8px; padding: 10px 14px;
     box-shadow: var(--hover-shadow);
@@ -259,8 +266,11 @@
 <div class="container">
   <div class="card">
     <div class="header">
-      <h1>指名検索 インプレッション推移</h1>
-      <div class="subtitle">GSC「facilo」「ファシロ」を含む検索 ─ @@PERIOD@@（週次合計・@@WEEKS@@週）</div>
+      <div class="heading-row"><h1>指名検索 インプレッション推移</h1>
+        <div class="period-switch" role="group" aria-label="グラフの集計単位"><button type="button" data-period="weekly" aria-pressed="true">週次</button><button type="button" data-period="monthly" aria-pressed="false">月次</button></div>
+      </div>
+      <div class="subtitle" id="periodSubtitle" aria-live="polite">GSC「facilo」「ファシロ」を含む検索 ─ @@PERIOD@@（週次合計・@@WEEKS@@週）</div>
+      <p class="period-note" id="periodNote">7日分が揃った週を表示。月次では1日〜月末が揃った月に切り替わります。</p>
       <div class="update-status"><span>データ最終日：@@LATEST@@</span><span>ページ更新：@@UPDATED@@</span></div>
       <div id="staleNotice" class="stale-notice" role="status" hidden>元データの最終日から14日を超えています。最新の取得状況を確認してください。</div>
     </div>
@@ -272,7 +282,7 @@
     <div class="stats-strip" id="stats"></div>
 
     <div class="defs" id="defs">
-      <button class="defs-toggle" onclick="document.getElementById('defs').classList.toggle('open')">
+      <button type="button" class="defs-toggle" aria-expanded="false" onclick="this.setAttribute('aria-expanded',document.getElementById('defs').classList.toggle('open'))">
         <span>指標の定義</span>
         <span class="defs-arrow">&#9660;</span>
       </button>
@@ -311,17 +321,17 @@
   <div class="card">
     <div class="header">
       <h1>検索意図カテゴリ分析</h1>
-      <div class="subtitle">週次グラフと同じ期間：@@PERIOD@@ ─ 累計 @@IMPRESSIONS@@ imp</div>
+      <div class="subtitle" id="categorySubtitle">週次グラフと同じ期間：@@PERIOD@@ ─ 累計 @@IMPRESSIONS@@ imp</div>
     </div>
     <div id="catChart"></div>
-    <div class="cat-ctr-note">@@CATEGORY_NOTE@@</div>
+    <div class="cat-ctr-note" id="categoryNote">@@CATEGORY_NOTE@@</div>
   </div>
   <div class="card source-card"><details><summary>データの期間・集計方法</summary><div class="method-body">
-<p><strong>対象：</strong>GSCで「facilo」「ファシロ」を含む検索。日付はGSCのPacific Time基準、週は月曜〜日曜です。</p>
-<p><strong>期間：</strong>@@PERIOD@@。7日分揃う週だけを使い、週次グラフとカテゴリ分析の対象日を揃えています。元データの最終日は@@LATEST@@です。開始端の@@EXCLUDED_START@@日と最終端の@@EXCLUDED_END@@日は期間外です。</p>
-<p><strong>集計：</strong>日付・検索語の重複と欠損を検証し、日次から週次を再計算。表示回数・クリック数は日次とカテゴリの合計を照合しています。集計日時：@@UPDATED@@。</p>
+<p><strong>対象：</strong>GSCで「facilo」「ファシロ」を含む検索。日付はGSCのPacific Time基準、週は月曜〜日曜、月は1日〜月末です。</p>
+<p id="methodPeriod"><strong>期間：</strong>@@PERIOD@@。7日分揃う週だけを使い、グラフとカテゴリ分析の対象日を揃えています。元データの最終日は@@LATEST@@です。開始端の@@EXCLUDED_START@@日と最終端の@@EXCLUDED_END@@日は期間外です。</p>
+<p><strong>集計：</strong>日付・検索語の重複と欠損を検証し、日次から週次・月次をそれぞれ計算。月をまたぐ週も各日が属する月に集計します。表示回数・クリック数は各期間のカテゴリ合計と照合し、元の日別データは保持します。集計日時：@@UPDATED@@。</p>
 <p><strong>カテゴリ：</strong>検索語から社名を除いた語で分類。複数条件に当てはまる場合は、ブランド指名→ログイン→採用→評判→ニュース→プロダクト→企業調査→その他の順に判定します。元の8分類を引き継いで判定条件を整理したため、以前のカテゴリ構成比との比較には再集計が必要です。</p>
-<p><strong>P25：</strong>直近8週を小さい順に並べた2番目の値。P25成長率は、最初の8個と直近8個のP25の平均を比較しています。</p>
+<p id="methodP25"><strong>P25：</strong>直近8週を小さい順に並べた2番目の値。P25成長率は、最初の8個と直近8個のP25の平均を比較しています。</p>
 <p><strong>更新：</strong>毎週月曜9:17ごろ（日本時間）に元シートを読み取り、検証後に更新する設定です。元データに問題がある場合は直前の正常なページを維持します。</p>
 </div></details></div>
 </div>
@@ -329,8 +339,21 @@
 <script id="dashboard-meta" type="application/json">@@METADATA_JSON@@</script>
 <script>
 const RAW = @@WEEKLY_JSON@@;
-
-const data = RAW.map(d => ({ date: d[0], imp: d[1], clicks: d[2] }));
+const MONTHLY = @@MONTHLY_JSON@@;
+let mode = 'weekly';
+let data, imps, sma12, med8, p25_8, totalImp, avgImp, peakImp, peakIdx, growthPct, p25growth;
+let activeSummary;
+const unit = () => mode === 'weekly' ? '週' : 'か月';
+const shortUnit = () => mode === 'weekly' ? 'w' : 'm';
+const periodLabel = () => mode === 'weekly' ? '週次' : '月次';
+const formatDate = value => value.replaceAll('-', '/');
+const formatPeriod = value => mode === 'weekly' ? `${formatDate(value)}週` : `${value.slice(0,4)}年${Number(value.slice(5,7))}月`;
+function growth(first, last) { return first > 0 ? Math.round((last-first)/first*100) : null; }
+function compareEdges(values) {
+  if(values.length < 8) return null;
+  return growth(values.slice(0,8).reduce((a,b)=>a+b,0)/8, values.slice(-8).reduce((a,b)=>a+b,0)/8);
+}
+function formatGrowth(value) { return value === null ? '—' : `${value >= 0 ? '+' : ''}${value}%`; }
 
 const EVENTS = [
   { type: 'line', date: '2025-09-08', label: 'PR: 事業用CL', color: 'ev-pr' },
@@ -361,23 +384,6 @@ function rollingMedian(arr, w) {
 }
 function rollingP25(arr, w) { return arr.map((_, i) => { if(i<w-1) return null; const s=arr.slice(i-w+1,i+1).slice().sort((a,b)=>a-b); return s[1]; }); }
 
-const imps = data.map(d => d.imp);
-const sma12 = rollingMean(imps, 12);
-const med8 = rollingMedian(imps, 8);
-const p25_8 = rollingP25(imps, 8);
-
-const totalImp = imps.reduce((a,b)=>a+b,0);
-const avgImp = Math.round(totalImp / imps.length);
-const peakImp = Math.max(...imps);
-const peakIdx = imps.indexOf(peakImp);
-const first8avg = Math.round(imps.slice(0,8).reduce((a,b)=>a+b,0)/8);
-const last8avg = Math.round(imps.slice(-8).reduce((a,b)=>a+b,0)/8);
-const growthPct = Math.round(((last8avg-first8avg)/first8avg)*100);
-const p25vals = p25_8.filter(v => v !== null);
-const p25first = p25vals.slice(0,8).reduce((a,b)=>a+b,0)/8;
-const p25last = p25vals.slice(-8).reduce((a,b)=>a+b,0)/8;
-const p25growth = Math.round(((p25last-p25first)/p25first)*100);
-
 const visible = { imp: true, sma: true, median: true, p25: true, events: true };
 const SERIES = [
   { key: 'imp', label: '週次 imp', color: '--c-imp', solid: true },
@@ -386,7 +392,15 @@ const SERIES = [
   { key: 'p25', label: '8w P25', color: '--c-p25', solid: false },
 ];
 
-function dateToIdx(ds) { for(let i=0;i<data.length;i++) if(data[i].date>=ds) return i; return data.length-1; }
+function dateToIdx(ds) {
+  const key = mode === 'monthly' ? ds.slice(0,7) + '-01' : ds;
+  for(let i=0;i<data.length;i++) if(data[i].date>=key) return i;
+  return data.length-1;
+}
+function eventNote(ds) {
+  if(mode === 'weekly') return EVENT_POINTS[ds];
+  return Object.entries(EVENT_POINTS).filter(([day]) => day.slice(0,7) === ds.slice(0,7)).map(([,note]) => note).join('<br>');
+}
 
 function buildLegend() {
   const el = document.getElementById('legend');
@@ -394,13 +408,13 @@ function buildLegend() {
     const cls = visible[s.key]?'':' off';
     const st = s.solid ? `background:var(${s.color})` : `--color:var(${s.color})`;
     const sw = s.solid ? 'legend-swatch' : 'legend-swatch dashed';
-    return `<div class="legend-item${cls}" data-key="${s.key}"><span class="${sw}" style="${st}"></span>${s.label}</div>`;
+    return `<button type="button" class="legend-item${cls}" data-key="${s.key}" aria-pressed="${visible[s.key]}"><span class="${sw}" style="${st}"></span>${s.label}</button>`;
   }).join('');
   h += '<div class="legend-sep"></div>';
-  h += `<div class="legend-item${visible.events?'':' off'}" data-key="events"><span class="legend-ev" style="background:var(--ev-autumn);border:1px solid var(--ev-autumn-line)"></span>施策イベント</div>`;
+  h += `<button type="button" class="legend-item${visible.events?'':' off'}" data-key="events" aria-pressed="${visible.events}"><span class="legend-ev" style="background:var(--ev-autumn);border:1px solid var(--ev-autumn-line)"></span>施策イベント</button>`;
   el.innerHTML = h;
   el.querySelectorAll('.legend-item').forEach(item => {
-    item.addEventListener('click', () => { visible[item.dataset.key] = !visible[item.dataset.key]; item.classList.toggle('off'); render(); });
+    item.addEventListener('click', () => { visible[item.dataset.key] = !visible[item.dataset.key]; item.classList.toggle('off'); item.setAttribute('aria-pressed',visible[item.dataset.key]); render(); });
   });
 }
 
@@ -408,6 +422,7 @@ function render() {
   const wrap = document.getElementById('chartWrap');
   const container = document.getElementById('chartContainer');
   const tooltip = document.getElementById('tooltip');
+  tooltip.classList.remove('visible');
   const W = Math.max(wrap.clientWidth, 700);
   const H = Math.min(420, Math.max(320, W * 0.42));
   const mg = { top: 28, right: 20, bottom: 40, left: 52 };
@@ -419,13 +434,14 @@ function render() {
   if(visible.sma) sma12.forEach(v=>{if(v!==null)allVis.push(v);});
   if(visible.median) med8.forEach(v=>{if(v!==null)allVis.push(v);});
   if(visible.p25) p25_8.forEach(v=>{if(v!==null)allVis.push(v);});
-  const maxV = Math.ceil((Math.max(...(allVis.length?allVis:imps))*1.08)/200)*200;
+  const scaleStep = mode === 'weekly' ? 200 : 1000;
+  const maxV = Math.max(scaleStep, Math.ceil((Math.max(...(allVis.length?allVis:imps))*1.08)/scaleStep)*scaleStep);
 
   const x = i => mg.left + (i/(data.length-1))*cw;
   const y = v => mg.top + ch - (v/maxV)*ch;
   const xDate = d => x(dateToIdx(d));
 
-  const yStep = maxV<=1200?200:400;
+  const yStep = mode === 'weekly' ? (maxV<=1200?200:400) : (maxV<=6000?1000:2000);
   const yTicks = []; for(let v=0;v<=maxV;v+=yStep) yTicks.push(v);
 
   const months = []; let lastM = '';
@@ -437,7 +453,9 @@ function render() {
   if(visible.events){
     EVENTS.forEach(ev=>{
       if(ev.type==='band'){
-        const x1=xDate(ev.start),x2=xDate(ev.end);
+        if(ev.end < activeSummary.periodStart || ev.start > activeSummary.periodEnd) return;
+        const pad = mode === 'monthly' ? cw/(data.length-1)*.45 : 0;
+        const x1=Math.max(mg.left,xDate(ev.start)-pad),x2=Math.min(W-mg.right,xDate(ev.end)+pad);
         const fill=ev.color==='autumn'?'var(--ev-autumn)':'var(--ev-spring)';
         const stroke=ev.color==='autumn'?'var(--ev-autumn-line)':'var(--ev-spring-line)';
         s+=`<rect x="${x1}" y="${mg.top}" width="${x2-x1}" height="${ch}" fill="${fill}" rx="3"/>`;
@@ -445,11 +463,12 @@ function render() {
         s+=`<line x1="${x2}" x2="${x2}" y1="${mg.top}" y2="${mg.top+ch}" stroke="${stroke}" stroke-width="1"/>`;
         s+=`<text x="${(x1+x2)/2}" y="${mg.top-6}" text-anchor="middle" fill="var(--ev-label)" font-size="10" font-family="system-ui" font-weight="500">${ev.color==='autumn'?'秋CP':'春CP'}</text>`;
       } else {
+        if(ev.date < activeSummary.periodStart || ev.date > activeSummary.periodEnd) return;
         const lx=xDate(ev.date);
         s+=`<line x1="${lx}" x2="${lx}" y1="${mg.top}" y2="${mg.top+ch}" stroke="var(--ev-pr)" stroke-width="1.5" stroke-dasharray="4 3"/>`;
       }
     });
-    s+=`<text x="${xDate('2025-09-15')}" y="${mg.top-6}" text-anchor="middle" fill="var(--ev-label)" font-size="10" font-family="system-ui" font-weight="500">PRラッシュ</text>`;
+    if(activeSummary.periodStart <= '2025-09-15' && activeSummary.periodEnd >= '2025-09-15') s+=`<text x="${xDate('2025-09-15')}" y="${mg.top-6}" text-anchor="middle" fill="var(--ev-label)" font-size="10" font-family="system-ui" font-weight="500">PRラッシュ</text>`;
   }
   yTicks.forEach(v=>{s+=`<line x1="${mg.left}" x2="${W-mg.right}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)" stroke-width="1"/>`;});
   if(visible.imp){
@@ -494,11 +513,11 @@ function render() {
     let ci=0,minD=Infinity; data.forEach((_,i)=>{const d=Math.abs(x(i)-mx); if(d<minD){minD=d;ci=i;}});
     cross.setAttribute('x1',x(ci)); cross.setAttribute('x2',x(ci)); cross.style.opacity='0.4';
     SERIES.forEach(ser=>{const v=getVal(ser.key,ci); if(v!==null&&visible[ser.key]){dots[ser.key].setAttribute('cx',x(ci));dots[ser.key].setAttribute('cy',y(v));dots[ser.key].style.opacity='1';}else dots[ser.key].style.opacity='0';});
-    const d=data[ci]; const[yr,mo,dy]=d.date.split('-');
-    let html=`<div class="tooltip-week">${yr}/${mo}/${dy}週</div>`;
+    const d=data[ci];
+    let html=`<div class="tooltip-week">${formatPeriod(d.date)}</div>`;
     SERIES.forEach(ser=>{if(!visible[ser.key])return; const v=getVal(ser.key,ci); if(v===null)return; html+=`<div class="tooltip-row"><span class="tooltip-label"><span class="tooltip-dot" style="background:var(${ser.color})"></span>${ser.label}</span><span class="tooltip-val">${v.toLocaleString()}</span></div>`;});
     if(visible.imp) html+=`<div class="tooltip-row"><span class="tooltip-label">clicks</span><span class="tooltip-val">${d.clicks.toLocaleString()}</span></div>`;
-    const evNote=EVENT_POINTS[d.date]; if(evNote&&visible.events) html+=`<div class="tooltip-event">${evNote}</div>`;
+    const evNote=eventNote(d.date); if(evNote&&visible.events) html+=`<div class="tooltip-event">${evNote}</div>`;
     tooltip.innerHTML=html; tooltip.classList.add('visible');
     const tipR=tooltip.getBoundingClientRect(); const wrapR=wrap.getBoundingClientRect();
     let tx=(x(ci)/ratio)+14; if(tx+tipR.width>wrapR.width-8) tx=(x(ci)/ratio)-tipR.width-14;
@@ -507,24 +526,22 @@ function render() {
   });
   svg.addEventListener('mouseleave',()=>{cross.style.opacity='0';Object.values(dots).forEach(d=>d.style.opacity='0');tooltip.classList.remove('visible');});
 
-  const pk=data[peakIdx].date.split('-');
   document.getElementById('stats').innerHTML=`
-    <div class="stat"><div class="stat-label">期間合計</div><div class="stat-value">${totalImp.toLocaleString()}</div><div class="stat-detail">${data.length}週</div></div>
-    <div class="stat"><div class="stat-label">週平均</div><div class="stat-value">${avgImp.toLocaleString()}</div></div>
-    <div class="stat"><div class="stat-label">ピーク</div><div class="stat-value">${peakImp.toLocaleString()}</div><div class="stat-detail">${pk[0]}/${pk[1]}/${pk[2]}週</div></div>
-    <div class="stat"><div class="stat-label">imp成長率</div><div class="stat-value ${growthPct>=0?'pos':'neg'}">${growthPct>=0?'+':''}${growthPct}%</div><div class="stat-detail">初期8w→直近8w</div></div>
-    <div class="stat"><div class="stat-label">P25成長率</div><div class="stat-value ${p25growth>=0?'pos':'neg'}">${p25growth>=0?'+':''}${p25growth}%</div><div class="stat-detail">床の底上げ</div></div>`;
+    <div class="stat"><div class="stat-label">期間合計</div><div class="stat-value">${totalImp.toLocaleString()}</div><div class="stat-detail">${data.length}${unit()}</div></div>
+    <div class="stat"><div class="stat-label">${mode==='weekly'?'週':'月'}平均</div><div class="stat-value">${avgImp.toLocaleString()}</div></div>
+    <div class="stat"><div class="stat-label">ピーク</div><div class="stat-value">${peakImp.toLocaleString()}</div><div class="stat-detail">${formatPeriod(data[peakIdx].date)}</div></div>
+    <div class="stat"><div class="stat-label">imp成長率</div><div class="stat-value ${growthPct===null?'':growthPct>=0?'pos':'neg'}">${formatGrowth(growthPct)}</div><div class="stat-detail">${growthPct===null?'比較できる値が不足':`初期8${shortUnit()}→直近8${shortUnit()}`}</div></div>
+    <div class="stat"><div class="stat-label">P25成長率</div><div class="stat-value ${p25growth===null?'':p25growth>=0?'pos':'neg'}">${formatGrowth(p25growth)}</div><div class="stat-detail">${p25growth===null?'比較できる値が不足':'床の底上げ'}</div></div>`;
 }
-
-buildLegend(); render(); window.addEventListener('resize', render);
 
 const CATS = @@CATEGORIES_JSON@@;
 
 function escapeHtml(value) { return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-const maxCatImp = Math.max(1, ...CATS.map(c => c.imp));
+function renderCategories(cats) {
+const maxCatImp = Math.max(1, ...cats.map(c => c.imp));
 const catEl = document.getElementById('catChart');
 let catHtml = '';
-CATS.forEach(c => {
+cats.forEach(c => {
   const barW = Math.max(2, (c.imp / maxCatImp) * 100);
   const kwTags = c.top.map(k => `<span class="cat-kw-tag">${escapeHtml(k)}</span>`).join('');
   const ctrBadge = c.ctr ? `<span class="cat-kw-tag" style="color:var(${c.color});border-color:var(${c.color})">${c.ctr}</span>` : '';
@@ -546,7 +563,55 @@ CATS.forEach(c => {
   </div>`;
 });
 catEl.innerHTML = catHtml;
+const nav = cats.find(c => c.key === 'navigation'), rep = cats.find(c => c.key === 'reputation');
+document.getElementById('categoryNote').innerHTML = `<strong>ナビゲーション（ログイン）</strong>：${nav.imp.toLocaleString()} imp・${nav.ctr}。ログイン目的の検索傾向を見る補助指標です。<br><strong>評判</strong>：${rep.imp.toLocaleString()} imp・${rep.ctr}。検索結果での比較・情報収集を含むため、クリック率だけで導入意欲は判断できません。`;
+}
 const dashboardMeta = JSON.parse(document.getElementById('dashboard-meta').textContent);
+function setPeriod(nextMode) {
+  mode = nextMode;
+  data = (mode === 'weekly' ? RAW : MONTHLY.rows).map(d => ({date:d[0],imp:d[1],clicks:d[2]}));
+  activeSummary = mode === 'weekly' ? dashboardMeta : MONTHLY;
+  imps = data.map(d => d.imp);
+  sma12 = rollingMean(imps,12); med8 = rollingMedian(imps,8); p25_8 = rollingP25(imps,8);
+  totalImp = imps.reduce((a,b)=>a+b,0); avgImp = Math.round(totalImp/imps.length);
+  peakImp = Math.max(...imps); peakIdx = imps.indexOf(peakImp);
+  growthPct = imps.length < 8 ? null : growth(Math.round(imps.slice(0,8).reduce((a,b)=>a+b,0)/8),Math.round(imps.slice(-8).reduce((a,b)=>a+b,0)/8));
+  p25growth = compareEdges(p25_8.filter(v=>v!==null));
+  SERIES[0].label = `${periodLabel()} imp`;
+  SERIES[1].label = `12${mode==='weekly'?'w':'か月'} 移動平均`;
+  SERIES[2].label = `8${mode==='weekly'?'w':'か月'} 中央値`;
+  SERIES[3].label = `8${mode==='weekly'?'w':'か月'} P25`;
+  document.querySelectorAll('[data-period]').forEach(button => button.setAttribute('aria-pressed',button.dataset.period===mode));
+  const period = `${formatDate(activeSummary.periodStart)} 〜 ${formatDate(activeSummary.periodEnd)}`;
+  document.getElementById('periodSubtitle').textContent = `GSC「facilo」「ファシロ」を含む検索 ─ ${period}（${periodLabel()}合計・${data.length}${unit()}）`;
+  const excludedMonth = activeSummary.excludedEndDays ? ` ${dashboardMeta.sourceLatestDay.slice(0,7).replace('-','/')}は${formatDate(dashboardMeta.sourceLatestDay)}までのため対象外です。` : '';
+  document.getElementById('periodNote').textContent = mode === 'weekly'
+    ? '7日分が揃った週を表示。月次では1日〜月末が揃った月に切り替わります。'
+    : `1日〜月末の全日分が揃った月を表示。${excludedMonth} 補助線も月単位に切り替わります。`;
+  document.getElementById('categorySubtitle').textContent = `${periodLabel()}グラフと同じ期間：${period} ─ 累計 ${totalImp.toLocaleString()} imp`;
+  const u = unit(), typical = mode === 'weekly' ? '週' : '月';
+  const definitions = [
+    [`${periodLabel()} imp（実測値）`, `その${typical}（${mode==='weekly'?'月〜日':'1日〜月末'}）の指名検索インプレッション合計。`, ''],
+    [`12${u} 移動平均（SMA-12${shortUnit()}）`, `直近12${u}の単純平均。マクロのトレンド方向が見える。`, `→ 「認知は${mode==='weekly'?'四半期':'年'}単位で伸びているか？」の判断に使う`],
+    [`8${u} ローリング中央値（Median-8${shortUnit()}）`, `直近8${u}の中央値。スパイクに引っ張られない「典型的な${typical}」の水準。`, `→ 施策前後で「普段の${typical}」がどれだけ上がったかを比較するのに最適`],
+    [`8${u} P25（下位25%点）`, `直近8${u}のうち下から2番目の値。「悪い${typical}でもこれだけは出る」という床。`, '→ 通常時の水準を見る補助指標。季節性や施策の影響と併せて判断する']
+  ];
+  document.querySelectorAll('.def-item').forEach((item,index)=>{
+    if(index >= definitions.length) return;
+    const [name,desc,usecase] = definitions[index];
+    const dot = item.querySelector('.dot').outerHTML;
+    item.querySelector('.def-name').innerHTML = dot + escapeHtml(name);
+    item.querySelector('.def-desc').textContent = desc;
+    if(item.querySelector('.def-usecase')) item.querySelector('.def-usecase').textContent = usecase;
+  });
+  document.getElementById('methodPeriod').innerHTML = `<strong>期間：</strong>${period}。${mode==='weekly'?'7日分揃う週':'1日〜月末が揃う月'}だけを使い、グラフとカテゴリ分析の対象日を揃えています。元データの最終日は${formatDate(dashboardMeta.sourceLatestDay)}です。開始端の${activeSummary.excludedStartDays}日と最終端の${activeSummary.excludedEndDays}日は期間外です。`;
+  document.getElementById('methodP25').innerHTML = `<strong>P25：</strong>直近8${u}を小さい順に並べた2番目の値。P25成長率は、最初の8個と直近8個のP25の平均を比較しています。補助線は必要な期間が揃ってから表示し、比較に必要な値が不足する場合や基準値が0の場合、成長率は「—」になります。`;
+  document.getElementById('chartWrap').scrollLeft = 0;
+  buildLegend(); render(); renderCategories(mode === 'weekly' ? CATS : MONTHLY.categories);
+}
+document.querySelectorAll('[data-period]').forEach(button => button.addEventListener('click',()=>setPeriod(button.dataset.period)));
+setPeriod('weekly');
+window.addEventListener('resize',render);
 function updateFreshness(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {timeZone:'America/Los_Angeles',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(now);
   const getPart = name => parts.find(p => p.type === name).value;

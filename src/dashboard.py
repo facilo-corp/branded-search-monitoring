@@ -1,5 +1,6 @@
 """Read-only aggregation and static rendering. Python standard library only."""
 import argparse
+from calendar import monthrange
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 import hashlib
@@ -129,6 +130,36 @@ def aggregate(snapshot, today):
         raise DataError('SHORT_HISTORY: 指標比較には15完了週以上が必要です')
     start = weekly[0][0]
     end = (date.fromisoformat(weekly[-1][0]) + timedelta(days=6)).isoformat()
+    impressions, clicks = (sum(w[i] for w in weekly) for i in (1, 2))
+    if not impressions:
+        raise DataError('CATEGORY_MISMATCH: 表示回数が0です')
+    categories = categories_for(queries, start, end, impressions, clicks)
+    months = defaultdict(list)
+    for day in days:
+        months[day[:7]].append(day)
+    monthly_rows = []
+    for month, ds in sorted(months.items()):
+        year, mon = map(int, month.split('-'))
+        if len(ds) == monthrange(year, mon)[1]:
+            monthly_rows.append([month + '-01', sum(daily[d][0] for d in ds), sum(daily[d][1] for d in ds)])
+    # Fifteen complete weeks necessarily include at least two complete calendar months.
+    month_start = monthly_rows[0][0]
+    last_month = date.fromisoformat(monthly_rows[-1][0])
+    month_end = last_month.replace(day=monthrange(last_month.year, last_month.month)[1]).isoformat()
+    month_imp, month_clicks = (sum(m[i] for m in monthly_rows) for i in (1, 2))
+    monthly = dict(rows=monthly_rows, months=len(monthly_rows),
+                   categories=categories_for(queries, month_start, month_end, month_imp, month_clicks),
+                   periodStart=month_start, periodEnd=month_end, impressions=month_imp, clicks=month_clicks,
+                   excludedStartDays=sum(d < month_start for d in days),
+                   excludedEndDays=sum(d > month_end for d in days))
+    return dict(weekly=weekly, categories=categories, monthly=monthly,
+                periodStart=start, periodEnd=end, sourceLatestDay=days[-1], weeks=len(weekly),
+                impressions=impressions, clicks=clicks,
+                excludedStartDays=sum(d < start for d in days), excludedEndDays=sum(d > end for d in days))
+
+
+def categories_for(queries, start, end, impressions, clicks):
+    """Keep query categories and the selected graph on exactly the same dates."""
     cats = {k: dict(key=k, label=label, desc=desc, imp=0, clicks=0, pct=0, top=[], color='--cat-' + k)
             for k, label, desc, _ in RULES}
     modifiers = defaultdict(Counter)
@@ -141,19 +172,15 @@ def aggregate(snapshot, today):
         cats[key]['clicks'] += counts[1]
         if mod:
             modifiers[key][mod] += counts[0]
-    impressions, clicks = (sum(w[i] for w in weekly) for i in (1, 2))
-    if not impressions or any(sum(c[field] for c in cats.values()) != n
+    if any(sum(c[field] for c in cats.values()) != n
                               for field, n in [('imp', impressions), ('clicks', clicks)]):
         raise DataError('CATEGORY_MISMATCH: カテゴリ合計が一致しません')
     for key, cat in cats.items():
-        cat['pct'] = round(cat['imp'] / impressions * 100, 1)
+        cat['pct'] = round(cat['imp'] / impressions * 100, 1) if impressions else 0
         cat['top'] = [m for m, _ in modifiers[key].most_common(3)]
         if key in ('navigation', 'reputation'):
             cat['ctr'] = f"CTR {cat['clicks'] / cat['imp'] * 100:.1f}%" if cat['imp'] else 'CTR —'
-    return dict(weekly=weekly, categories=sorted(cats.values(), key=lambda c: -c['imp']),
-                periodStart=start, periodEnd=end, sourceLatestDay=days[-1], weeks=len(weekly),
-                impressions=impressions, clicks=clicks,
-                excludedStartDays=sum(d < start for d in days), excludedEndDays=sum(d > end for d in days))
+    return sorted(cats.values(), key=lambda c: -c['imp'])
 
 
 def guard_history(data, previous_html):
@@ -162,6 +189,11 @@ def guard_history(data, previous_html):
     old = extract_metadata(previous_html)
     if data['periodStart'] != old['periodStart'] or data['periodEnd'] < old['periodEnd'] or data['weeks'] < old['weeks']:
         raise DataError('HISTORY_LOSS: 過去データまたは最新の週が失われています')
+    if 'monthly' in old:
+        current, previous = data['monthly'], old['monthly']
+        if (current['periodStart'] != previous['periodStart'] or current['periodEnd'] < previous['periodEnd']
+                or current['months'] < previous['months']):
+            raise DataError('HISTORY_LOSS: 過去データまたは最新の月が失われています')
 
 
 def extract_metadata(html):
@@ -177,10 +209,12 @@ def render(data, template, built_at):
     nav, rep = cats['navigation'], cats['reputation']
     note = (f'<strong>ナビゲーション（ログイン）</strong>：{nav["imp"]:,} imp・{nav["ctr"]}。ログイン目的の検索傾向を見る補助指標です。<br>'
             f'<strong>評判</strong>：{rep["imp"]:,} imp・{rep["ctr"]}。検索結果での比較・情報収集を含むため、クリック率だけで導入意欲は判断できません。')
-    meta = {key: value for key, value in data.items() if key not in ('weekly', 'categories')}
+    meta = {key: value for key, value in data.items() if key not in ('weekly', 'categories', 'monthly')}
+    meta['monthly'] = {key: value for key, value in data['monthly'].items() if key not in ('rows', 'categories')}
     meta.update(builtAt=built_at.isoformat(timespec='seconds'), staleAfterDays=MAX_DATA_AGE_DAYS)
     mapping = {
         'WEEKLY_JSON': script_json(data['weekly']), 'CATEGORIES_JSON': script_json(data['categories']),
+        'MONTHLY_JSON': script_json(data['monthly']),
         'METADATA_JSON': script_json(meta), 'PERIOD': escape(period), 'WEEKS': str(data['weeks']),
         'IMPRESSIONS': f"{data['impressions']:,}", 'LATEST': data['sourceLatestDay'].replace('-', '/'),
         'UPDATED': built_at.astimezone(JST).strftime('%Y/%m/%d %H:%M JST'),
@@ -232,6 +266,20 @@ def validate_html(html):
         raise DataError('RENDER_MISMATCH: 表示データが集計結果と一致しません')
     if sum(r[2] for r in weekly) != meta['clicks'] or sum(c['clicks'] for c in cats) != meta['clicks']:
         raise DataError('RENDER_MISMATCH: クリック数が一致しません')
+    if 'monthly' in meta:
+        found = re.search(r'const MONTHLY = (.*?);\n', html)
+        if not found:
+            raise DataError('RENDER_MISMATCH: 月次の表示データがありません')
+        monthly = json.loads(found.group(1))
+        summary = {k: v for k, v in monthly.items() if k not in ('rows', 'categories')}
+        if (summary != meta['monthly'] or len(monthly['rows']) != summary['months']
+                or monthly['rows'][0][0] != summary['periodStart']):
+            raise DataError('RENDER_MISMATCH: 月次の期間が一致しません')
+        for i, field in [(1, 'impressions'), (2, 'clicks')]:
+            cat_field = 'imp' if i == 1 else 'clicks'
+            if (sum(row[i] for row in monthly['rows']) != summary[field]
+                    or sum(c[cat_field] for c in monthly['categories']) != summary[field]):
+                raise DataError('RENDER_MISMATCH: 月次とカテゴリの合計が一致しません')
     return meta
 
 
