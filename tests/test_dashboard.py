@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from dashboard import DataError, aggregate, build, date_key, extract_metadata, guard_history, render, script_json, validate_html
+from dashboard import DataError, aggregate, build, categories_for, date_key, extract_metadata, guard_history, render, script_json, validate_html
 
 ROOT = Path(__file__).resolve().parents[1]
 START = date(2026, 5, 4) # Monday; fixtures are entirely synthetic.
@@ -28,6 +28,33 @@ def fixture(count=112):
 
 
 class AggregationTests(unittest.TestCase):
+    def test_keyword_top_ten_and_remainder_keep_both_metrics(self):
+        queries = {('2026-06-01', f'facilo 料金 {i:02d}'): [i, i//2] for i in range(1,14)}
+        queries[('2026-06-02', 'facilo 料金 01')] = [20,5]
+        queries[('2026-07-01', 'facilo 料金 除外')] = [999,99]
+        cats = categories_for(queries,'2026-06-01','2026-06-30',111,47)
+        cat = next(c for c in cats if c['key'] == 'product')
+        self.assertEqual(cat['queryCount'],13)
+        self.assertEqual(cat['queries'][0],dict(query='facilo 料金 01',imp=21,clicks=5))
+        self.assertEqual(cat['remaining'],dict(queryCount=3,imp=9,clicks=4))
+        self.assertEqual(sum(q['imp'] for q in cat['queries'])+cat['remaining']['imp'],111)
+        self.assertEqual(sum(q['clicks'] for q in cat['queries'])+cat['remaining']['clicks'],47)
+
+    def test_brand_spellings_and_monthly_period_stay_distinct(self):
+        source = fixture()
+        source['valueRanges'][1]['values'][1][1] = 'ファシロ'
+        result = aggregate(source,NOW.date())
+        exact = next(c for c in result['categories'] if c['key']=='exact')
+        month = next(c for c in result['monthly']['categories'] if c['key']=='exact')
+        self.assertEqual({q['query'] for q in exact['queries']},{'facilo','ファシロ'})
+        self.assertEqual(month['queries'],[dict(query='facilo',imp=366,clicks=122)])
+
+    def test_keyword_render_total_mismatch_is_rejected(self):
+        result = aggregate(fixture(),NOW.date())
+        result['categories'][0]['queries'][0]['imp'] += 1
+        with self.assertRaisesRegex(DataError,'QUERY_BREAKDOWN_MISMATCH'):
+            render(result,(ROOT/'template.html').read_text(encoding='utf-8'),NOW)
+
     def test_monthly_uses_complete_calendar_months_and_matching_categories(self):
         result = aggregate(fixture(), NOW.date())
         monthly = result['monthly']

@@ -163,6 +163,7 @@ def categories_for(queries, start, end, impressions, clicks):
     cats = {k: dict(key=k, label=label, desc=desc, imp=0, clicks=0, pct=0, top=[], color='--cat-' + k)
             for k, label, desc, _ in RULES}
     modifiers = defaultdict(Counter)
+    query_counts = defaultdict(lambda: defaultdict(lambda: [0, 0]))
     for (day, query), counts in queries.items():
         if not start <= day <= end:
             continue
@@ -170,6 +171,8 @@ def categories_for(queries, start, end, impressions, clicks):
         key = next(k for k, _, _, pattern in RULES if re.search(pattern, mod, re.I))
         cats[key]['imp'] += counts[0]
         cats[key]['clicks'] += counts[1]
+        for i in range(2):
+            query_counts[key][query][i] += counts[i]
         if mod:
             modifiers[key][mod] += counts[0]
     if any(sum(c[field] for c in cats.values()) != n
@@ -178,6 +181,12 @@ def categories_for(queries, start, end, impressions, clicks):
     for key, cat in cats.items():
         cat['pct'] = round(cat['imp'] / impressions * 100, 1) if impressions else 0
         cat['top'] = [m for m, _ in modifiers[key].most_common(3)]
+        ranked = sorted(query_counts[key].items(), key=lambda item: (-item[1][0], -item[1][1], item[0]))
+        cat['queryCount'] = len(ranked)
+        cat['queries'] = [dict(query=q, imp=n[0], clicks=n[1]) for q, n in ranked[:10]]
+        cat['remaining'] = dict(queryCount=max(0, len(ranked)-10),
+                                imp=sum(n[0] for _, n in ranked[10:]),
+                                clicks=sum(n[1] for _, n in ranked[10:]))
         if key in ('navigation', 'reputation'):
             cat['ctr'] = f"CTR {cat['clicks'] / cat['imp'] * 100:.1f}%" if cat['imp'] else 'CTR —'
     return sorted(cats.values(), key=lambda c: -c['imp'])
@@ -262,6 +271,7 @@ def validate_html(html):
     meta = extract_metadata(html)
     weekly = json.loads(re.search(r'const RAW = (.*?);\n', html).group(1))
     cats = json.loads(re.search(r'const CATS = (.*?);\n', html).group(1))
+    validate_query_breakdown(cats)
     if len(weekly) != meta['weeks'] or sum(r[1] for r in weekly) != meta['impressions'] or sum(c['imp'] for c in cats) != meta['impressions']:
         raise DataError('RENDER_MISMATCH: 表示データが集計結果と一致しません')
     if sum(r[2] for r in weekly) != meta['clicks'] or sum(c['clicks'] for c in cats) != meta['clicks']:
@@ -271,6 +281,7 @@ def validate_html(html):
         if not found:
             raise DataError('RENDER_MISMATCH: 月次の表示データがありません')
         monthly = json.loads(found.group(1))
+        validate_query_breakdown(monthly['categories'])
         summary = {k: v for k, v in monthly.items() if k not in ('rows', 'categories')}
         if (summary != meta['monthly'] or len(monthly['rows']) != summary['months']
                 or monthly['rows'][0][0] != summary['periodStart']):
@@ -281,6 +292,18 @@ def validate_html(html):
                     or sum(c[cat_field] for c in monthly['categories']) != summary[field]):
                 raise DataError('RENDER_MISMATCH: 月次とカテゴリの合計が一致しません')
     return meta
+
+
+def validate_query_breakdown(categories):
+    for cat in categories:
+        if 'queries' not in cat:  # Previously published versions remain readable.
+            continue
+        rows, remaining = cat['queries'], cat['remaining']
+        if (len(rows) > 10 or len({r['query'] for r in rows}) != len(rows)
+                or len(rows) + remaining['queryCount'] != cat['queryCount']
+                or any(sum(row[key] for row in rows) + remaining[key] != cat[key]
+                       for key in ('imp', 'clicks'))):
+            raise DataError('QUERY_BREAKDOWN_MISMATCH: 検索語内訳とカテゴリ合計が一致しません')
 
 
 def build(snapshot, template_path, output, built_at):
