@@ -1,0 +1,103 @@
+name: Branded Search Automation Monitor
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Read and preview only; do not persist or send
+        type: boolean
+        default: true
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+
+permissions: {}
+
+concurrency:
+  group: marketing-automation-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || vars.MONITOR_ENABLED == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - name: Install monitoring dependencies
+        run: python -m pip install requests PyYAML
+      - name: Validate classification and delivery interruption handling
+        run: python -m unittest discover -s automation-monitor -p 'test_*.py' -q
+      - name: Verify alert bot and destination (read only)
+        env:
+          SLACK_ALERT_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os, requests
+          headers = {"Authorization": "Bearer " + os.environ["SLACK_ALERT_BOT_TOKEN"]}
+          for method, params in [("auth.test", {}), ("conversations.info", {"channel": "C0C7QRMJP0R"})]:
+              try:
+                  response = requests.get("https://slack.com/api/" + method, headers=headers, params=params, timeout=20, allow_redirects=False)
+                  result = response.json()
+                  scopes = set(response.headers.get("x-oauth-scopes", "").split(","))
+                  print(method + ": " + str({"ok": result.get("ok") is True,
+                      "known_error": result.get("error") if result.get("error") in {"not_in_channel", "channel_not_found", "missing_scope", "invalid_auth", "token_revoked", "account_inactive"} else None,
+                      "channel_read": "channels:read" in scopes, "channel_join": "channels:join" in scopes,
+                      "message_write": "chat:write" in scopes, "message_write_public": "chat:write.public" in scopes}))
+                  if response.status_code != 200 or not result.get("ok"):
+                      raise ValueError()
+                  if method == "conversations.info":
+                      channel = result["channel"]
+                      print("destination: " + str({"matches": channel.get("id") == "C0C7QRMJP0R", "archived": bool(channel.get("is_archived")), "member": bool(channel.get("is_member"))}))
+                      if channel.get("id") != "C0C7QRMJP0R" or channel.get("is_archived") or not channel.get("is_member"):
+                          raise ValueError()
+                  print(method + ": verified")
+              except Exception:
+                  raise SystemExit("Alert bot/destination requires review; nothing sent") from None
+          PY
+      - name: Observe and apply approved alert policy
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MONITOR_AUTOMATION_ENABLED: ${{ vars.AUTOMATION_ENABLED }}
+          MONITOR_SCHEDULE_ENABLED: ${{ vars.SCHEDULE_ENABLED }}
+          SLACK_ALERT_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          MONITOR_ENABLED: ${{ vars.MONITOR_ENABLED }}
+          APPROVED_MONITOR_SHA: ${{ vars.APPROVED_MONITOR_SHA }}
+          ALERT_DELIVERY_ENABLED: ${{ vars.ALERT_DELIVERY_ENABLED }}
+          ALERT_RECURRING_ENABLED: ${{ vars.ALERT_RECURRING_ENABLED }}
+          EVENT_NAME: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          TEST_DELIVERY: 'false'
+        run: |
+          args=(--target branded --output monitor-result)
+          if [[ "$EVENT_NAME" == "schedule" || "$DRY_RUN" == "false" ]]; then
+            args+=(--persist)
+            if [[ "$ALERT_DELIVERY_ENABLED" == "true" ]]; then
+              if [[ "$TEST_DELIVERY" == "true" ]]; then
+                args+=(--send --test-delivery --authorization automation-monitor/test-authorization.json)
+              elif [[ "$ALERT_RECURRING_ENABLED" == "true" ]]; then
+                args+=(--send --authorization automation-monitor/authorization.json)
+              fi
+            fi
+          fi
+          python automation-monitor/runtime.py "${args[@]}"
+      - name: Preserve sanitized observation and unsent candidates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: automation-monitor-${{ github.run_id }}
+          path: |
+            monitor-result/report.json
+            monitor-result/evidence.json
+            monitor-result/exact-approval-unapproved.json
+          retention-days: 14
+          if-no-files-found: ignore

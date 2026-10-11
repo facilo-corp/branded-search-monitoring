@@ -1,0 +1,13 @@
+{
+  "approved": true,
+  "mode": "recurring_template_exception",
+  "channel": "C0C7QRMJP0R",
+  "repository": "facilo-corp/branded-search-monitoring",
+  "target": "branded",
+  "approval_reference": "2026-10-11 current conversation: user replied お願いします to deployment of the reviewed three per-repository monitors, the one previously approved exact test, deduplication verification and recurring alert activation.",
+  "exception_scope": "only_these_marketing_alerts",
+  "template_version": "marketing-alerts-v1",
+  "code_sha256": "85083e6b0488c3e62d4ee08eaa274fb38d9d65ef86e872f0324e4dd04ff9ecae",
+  "not_before": "2026-10-11T08:14:31.886885+00:00",
+  "expires_at": null
+}
