@@ -1,1 +1,3 @@
 * text=auto eol=lf
+automation-monitor/*.py text eol=lf
+automation-monitor/*.json text eol=lf
