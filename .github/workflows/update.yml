@@ -17,6 +17,10 @@ on:
         description: '照合の取得終端 YYYY-MM-DD（空欄ならJSTの3日前）'
         type: string
         default: ''
+      gsc_rehearsal:
+        description: '検証Sheetだけで保存・復元を試す（公開・比較と同時指定不可）'
+        type: boolean
+        default: false
 
 permissions: {}
 concurrency:
@@ -25,7 +29,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.repository == 'facilo-corp/branded-search-monitoring' && github.ref == 'refs/heads/main' && vars.AUTOMATION_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || vars.SCHEDULE_ENABLED == 'true')
+    if: github.repository == 'facilo-corp/branded-search-monitoring' && github.ref == 'refs/heads/main' && vars.AUTOMATION_ENABLED == 'true' && !inputs.gsc_rehearsal && (github.event_name == 'workflow_dispatch' || vars.SCHEDULE_ENABLED == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -166,9 +170,79 @@ jobs:
           path: site
           retention-days: 1
 
+  rehearse:
+    if: github.repository == 'facilo-corp/branded-search-monitoring' && github.ref == 'refs/heads/main' && vars.AUTOMATION_ENABLED == 'true' && github.event_name == 'workflow_dispatch' && inputs.gsc_rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AUTOMATION_ENABLED: ${{ vars.AUTOMATION_ENABLED }}
+      REHEARSAL_ENABLED: ${{ vars.REHEARSAL_ENABLED }}
+      SHEET_ID: ${{ vars.SHEET_ID }}
+      REHEARSAL_SHEET_ID: ${{ vars.REHEARSAL_SHEET_ID }}
+      REHEARSAL_BACKUP_FOLDER_ID: ${{ vars.REHEARSAL_BACKUP_FOLDER_ID }}
+      REHEARSE: ${{ inputs.gsc_rehearsal }}
+      COMPARE: ${{ inputs.gsc_compare }}
+      PUBLISH: ${{ inputs.publish }}
+      COMPARISON_END_DATE: ${{ inputs.comparison_end_date }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Validate rehearsal target and mode before authentication
+        run: python src/rehearse_cutover.py --check-config
+      - name: Test failure handling
+        run: python -m unittest discover -s tests -v
+      - name: Authenticate reader
+        id: rehearsal_reader
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GOOGLE_WIF_PROVIDER }}
+          service_account: ${{ vars.GOOGLE_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/spreadsheets.readonly
+          access_token_lifetime: 1800s
+          create_credentials_file: false
+          export_environment_variables: false
+      - name: Authenticate collector with edit access only to the test Sheet
+        id: rehearsal_collector
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GOOGLE_WIF_PROVIDER }}
+          service_account: ${{ vars.GOOGLE_COLLECTOR_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/webmasters.readonly,https://www.googleapis.com/auth/spreadsheets
+          access_token_lifetime: 1800s
+          create_credentials_file: false
+          export_environment_variables: false
+      - name: Authenticate backup account
+        id: rehearsal_backup
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GOOGLE_WIF_PROVIDER }}
+          service_account: ${{ vars.GOOGLE_BACKUP_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/drive
+          access_token_lifetime: 1800s
+          create_credentials_file: false
+          export_environment_variables: false
+      - name: Save, read back and restore the test Sheet
+        env:
+          GOOGLE_READER_TOKEN: ${{ steps.rehearsal_reader.outputs.access_token }}
+          GOOGLE_COLLECTOR_TOKEN: ${{ steps.rehearsal_collector.outputs.access_token }}
+          GOOGLE_BACKUP_TOKEN: ${{ steps.rehearsal_backup.outputs.access_token }}
+        run: python src/rehearse_cutover.py
+
   deploy:
     needs: build
-    if: github.event_name == 'schedule' || inputs.publish
+    if: ${{ !inputs.gsc_rehearsal && (github.event_name == 'schedule' || inputs.publish) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
