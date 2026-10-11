@@ -250,6 +250,29 @@
     font-size: 12px; color: var(--text-secondary); line-height: 1.6;
   }
   .cat-ctr-note strong { color: var(--text-primary); font-weight: 600; }
+  .cat-group { border-bottom: 1px solid var(--border); }
+  .cat-group:last-child { border-bottom: none; }
+  .cat-group > summary { list-style: none; cursor: pointer; border: 0; }
+  .cat-group > summary::-webkit-details-marker { display: none; }
+  .cat-group > summary:hover { background: var(--def-bg); }
+  .cat-group > summary:focus-visible { outline: 2px solid var(--c-imp); outline-offset: 2px; }
+  .cat-expand { display: block; margin-top: 4px; color: var(--text-muted); font-size: 10.5px; }
+  .cat-group[open] .cat-expand { color: var(--text-primary); }
+  .query-detail { padding: 2px 14px 16px; }
+  .query-caption { font-size: 12px; color: var(--text-secondary); margin: 8px 0; }
+  .query-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+  .query-table th, .query-table td { padding: 8px 5px; border-bottom: 1px solid var(--border); text-align: right; }
+  .query-table th { font-size: 10.5px; color: var(--text-muted); font-weight: 500; }
+  .query-table th:first-child, .query-table td:first-child { text-align: left; width: 43%; overflow-wrap: anywhere; }
+  .query-rest { color: var(--text-secondary); }
+  .query-total { font-weight: 650; }
+  .pr-notes { margin: 14px 0 0; padding: 12px 14px; background: var(--def-bg); border-radius: 8px; }
+  .pr-title { font-size: 12px; font-weight: 650; margin-bottom: 8px; }
+  .pr-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 7px; }
+  .pr-list li { font-size: 12px; color: var(--text-secondary); line-height: 1.55; }
+  .pr-date { color: var(--text-primary); font-weight: 600; margin-right: 8px; white-space: nowrap; }
+  .pr-pending { font-size: 10.5px; color: var(--text-muted); margin-left: 8px; white-space: nowrap; }
+  .pr-caveat { margin: 9px 0 0; font-size: 11px; color: var(--text-muted); line-height: 1.5; }
 
   @media (max-width: 640px) {
     body { padding: 12px; }
@@ -260,6 +283,8 @@
     .cat-row { grid-template-columns: 110px 1fr 60px; gap: 8px; }
     .cat-name { font-size: 12px; }
     .cat-imp { font-size: 13px; }
+    .query-detail { padding-left: 0; padding-right: 0; }
+    .query-table { font-size: 11px; }
   }
 </style>
 
@@ -271,7 +296,7 @@
       </div>
       <div class="subtitle" id="periodSubtitle" aria-live="polite">GSC「facilo」「ファシロ」を含む検索 ─ 2025/03/10 〜 2026/09/27（週次合計・81週）</div>
       <p class="period-note" id="periodNote">7日分が揃った週を表示。月次では1日〜月末が揃った月に切り替わります。</p>
-      <div class="update-status"><span>データ最終日：2026/09/29</span><span>ページ更新：2026/10/11 16:13 JST</span></div>
+      <div class="update-status"><span>データ最終日：2026/09/29</span><span>ページ更新：2026/10/11 16:56 JST</span></div>
       <div id="staleNotice" class="stale-notice" role="status" hidden>元データの最終日から14日を超えています。最新の取得状況を確認してください。</div>
     </div>
     <div class="chart-wrap" id="chartWrap">
@@ -279,6 +304,7 @@
       <div class="tooltip" id="tooltip"></div>
     </div>
     <p class="chart-scroll-hint">グラフは左右にスクロールできます</p><div class="legend" id="legend"></div>
+    <div class="pr-notes" id="prNotes"></div>
     <div class="stats-strip" id="stats"></div>
 
     <div class="defs" id="defs">
@@ -310,7 +336,8 @@
           <div class="def-name"><span class="dot" style="background:var(--ev-autumn-line); border-radius: 2px; width: 12px; height: 12px;"></span>施策オーバーレイ</div>
           <div class="def-desc">
             <strong>秋CP（オレンジ帯）</strong>: 2025/11/5〜12/7。CM+YouTube+タクシー+OOH ~7,000万円。<br>
-            <strong>PRラッシュ（紫線）</strong>: 2025/9月。事業用CL→賃貸CL→DXリサーチの3連打。<br>
+            <strong>2025年PRラッシュ（紫線）</strong>: 2025/9月。事業用CL→賃貸CL→DXリサーチの3連打。<br>
+            <strong>2026年PRラッシュ（紫線）</strong>: 9/10 仲介力共同研究、9/17 シリーズB資金調達、10/1 AI駆動の3プロダクト。日付は日本時間の発表日。週次では発表日を含む週、月次では発表月に配置します。<br>
             <strong>春CP（緑帯）</strong>: 2026/5/11〜5/31。タクシー+YouTube+正直不動産タイアップ。
           </div>
         </div>
@@ -322,6 +349,7 @@
     <div class="header">
       <h1>検索意図カテゴリ分析</h1>
       <div class="subtitle" id="categorySubtitle">週次グラフと同じ期間：2025/03/10 〜 2026/09/27 ─ 累計 85,278 imp</div>
+      <p class="period-note">カテゴリを開くと、同じ対象期間の検索語上位10件と「その他」の内訳を確認できます。</p>
     </div>
     <div id="catChart"></div>
     <div class="cat-ctr-note" id="categoryNote"><strong>ナビゲーション（ログイン）</strong>：5,807 imp・CTR 90.1%。ログイン目的の検索傾向を見る補助指標です。<br><strong>評判</strong>：1,681 imp・CTR 7.6%。検索結果での比較・情報収集を含むため、クリック率だけで導入意欲は判断できません。</div>
@@ -329,20 +357,21 @@
   <div class="card source-card"><details><summary>データの期間・集計方法</summary><div class="method-body">
 <p><strong>対象：</strong>GSCで「facilo」「ファシロ」を含む検索。日付はGSCのPacific Time基準、週は月曜〜日曜、月は1日〜月末です。</p>
 <p id="methodPeriod"><strong>期間：</strong>2025/03/10 〜 2026/09/27。7日分揃う週だけを使い、グラフとカテゴリ分析の対象日を揃えています。元データの最終日は2026/09/29です。開始端の1日と最終端の2日は期間外です。</p>
-<p><strong>集計：</strong>日付・検索語の重複と欠損を検証し、日次から週次・月次をそれぞれ計算。月をまたぐ週も各日が属する月に集計します。表示回数・クリック数は各期間のカテゴリ合計と照合し、元の日別データは保持します。集計日時：2026/10/11 16:13 JST。</p>
+<p><strong>集計：</strong>日付・検索語の重複と欠損を検証し、日次から週次・月次をそれぞれ計算。月をまたぐ週も各日が属する月に集計します。表示回数・クリック数は各期間のカテゴリ合計と照合し、元の日別データは保持します。集計日時：2026/10/11 16:56 JST。</p>
 <p><strong>カテゴリ：</strong>検索語から社名を除いた語で分類。複数条件に当てはまる場合は、ブランド指名→ログイン→採用→評判→ニュース→プロダクト→企業調査→その他の順に判定します。元の8分類を引き継いで判定条件を整理したため、以前のカテゴリ構成比との比較には再集計が必要です。</p>
+<p><strong>検索語の内訳：</strong>対象期間内の同じ検索語を合算し、表示回数が多い上位10語を表示します。最低表示回数の条件は設けず、11位以下は「その他」に集約。比率は各カテゴリ内の表示回数に占める割合です。Facilo／ファシロなどの表記は元の検索語ごとに残します。</p>
 <p id="methodP25"><strong>P25：</strong>直近8週を小さい順に並べた2番目の値。P25成長率は、最初の8個と直近8個のP25の平均を比較しています。</p>
 <p><strong>更新：</strong>毎週月曜9:17ごろ（日本時間）に元シートを読み取り、検証後に更新する設定です。元データに問題がある場合は直前の正常なページを維持します。</p>
 </div></details></div>
 </div>
 
-<script id="dashboard-meta" type="application/json">{"periodStart":"2025-03-10","periodEnd":"2026-09-27","sourceLatestDay":"2026-09-29","weeks":81,"impressions":85278,"clicks":34570,"excludedStartDays":1,"excludedEndDays":2,"monthly":{"months":17,"periodStart":"2025-04-01","periodEnd":"2026-08-31","impressions":78121,"clicks":31676,"excludedStartDays":23,"excludedEndDays":29},"builtAt":"2026-10-11T07:13:36+00:00","staleAfterDays":14}</script>
+<script id="dashboard-meta" type="application/json">{"periodStart":"2025-03-10","periodEnd":"2026-09-27","sourceLatestDay":"2026-09-29","weeks":81,"impressions":85278,"clicks":34570,"excludedStartDays":1,"excludedEndDays":2,"monthly":{"months":17,"periodStart":"2025-04-01","periodEnd":"2026-08-31","impressions":78121,"clicks":31676,"excludedStartDays":23,"excludedEndDays":29},"builtAt":"2026-10-11T07:56:09+00:00","staleAfterDays":14}</script>
 <script>
 const RAW = [["2025-03-10",798,333],["2025-03-17",687,286],["2025-03-24",626,232],["2025-03-31",622,232],["2025-04-07",685,259],["2025-04-14",718,279],["2025-04-21",687,234],["2025-04-28",451,182],["2025-05-05",589,256],["2025-05-12",663,245],["2025-05-19",712,262],["2025-05-26",822,308],["2025-06-02",804,282],["2025-06-09",880,325],["2025-06-16",777,240],["2025-06-23",769,285],["2025-06-30",727,310],["2025-07-07",786,295],["2025-07-14",705,270],["2025-07-21",824,335],["2025-07-28",791,298],["2025-08-04",732,315],["2025-08-11",461,242],["2025-08-18",838,334],["2025-08-25",826,314],["2025-09-01",866,335],["2025-09-08",843,300],["2025-09-15",871,305],["2025-09-22",772,323],["2025-09-29",993,414],["2025-10-06",1021,395],["2025-10-13",1127,464],["2025-10-20",1310,495],["2025-10-27",1098,374],["2025-11-03",1483,479],["2025-11-10",1377,631],["2025-11-17",1671,909],["2025-11-24",1465,751],["2025-12-01",1526,636],["2025-12-08",1292,503],["2025-12-15",1063,362],["2025-12-22",812,299],["2025-12-29",321,119],["2026-01-05",1040,413],["2026-01-12",1192,450],["2026-01-19",1102,416],["2026-01-26",1183,436],["2026-02-02",1130,438],["2026-02-09",1174,443],["2026-02-16",1271,457],["2026-02-23",1179,390],["2026-03-02",1256,438],["2026-03-09",1854,841],["2026-03-16",1524,655],["2026-03-23",1306,535],["2026-03-30",1333,533],["2026-04-06",1389,602],["2026-04-13",1408,578],["2026-04-20",1278,526],["2026-04-27",942,413],["2026-05-04",969,412],["2026-05-11",1472,602],["2026-05-18",1547,606],["2026-05-25",1427,696],["2026-06-01",1362,642],["2026-06-08",1330,596],["2026-06-15",1251,540],["2026-06-22",1200,510],["2026-06-29",1264,522],["2026-07-06",1318,579],["2026-07-13",1271,543],["2026-07-20",1195,488],["2026-07-27",1214,493],["2026-08-03",1115,466],["2026-08-10",573,224],["2026-08-17",1126,481],["2026-08-24",1046,463],["2026-08-31",1101,477],["2026-09-07",1160,492],["2026-09-14",1886,713],["2026-09-21",999,414]];
-const MONTHLY = {"rows":[["2025-04-01",2820,1048],["2025-05-01",2916,1132],["2025-06-01",3440,1221],["2025-07-01",3466,1372],["2025-08-01",3116,1296],["2025-09-01",3698,1419],["2025-10-01",5064,1937],["2025-11-01",6135,2819],["2025-12-01",4796,1837],["2026-01-01",4589,1737],["2026-02-01",4736,1727],["2026-03-01",6550,2708],["2026-04-01",5686,2387],["2026-05-01",5633,2403],["2026-06-01",5528,2438],["2026-07-01",5661,2390],["2026-08-01",4287,1805]],"months":17,"categories":[{"key":"exact","label":"ブランド指名","desc":"facilo / ファシロ のみ","imp":48062,"clicks":17437,"pct":61.5,"top":[],"color":"--cat-exact"},{"key":"corporate","label":"企業調査","desc":"会社情報・代表名","imp":10277,"clicks":3561,"pct":13.2,"top":["株式会社","とは","市川"],"color":"--cat-corporate"},{"key":"product","label":"プロダクト","desc":"サービス・料金・機能","imp":6109,"clicks":2164,"pct":7.8,"top":["不動産","料金","マーケットプレイス"],"color":"--cat-product"},{"key":"navigation","label":"ナビゲーション","desc":"ログイン・ログオン","imp":5338,"clicks":4798,"pct":6.8,"top":["ログイン"],"color":"--cat-navigation","ctr":"CTR 89.9%"},{"key":"recruitment","label":"採用","desc":"採用・求人・給与・職場情報","imp":3824,"clicks":2411,"pct":4.9,"top":["採用","年収","株式会社 求人"],"color":"--cat-recruitment"},{"key":"other","label":"その他","desc":"上記に当てはまらない検索","imp":1711,"clicks":1039,"pct":2.2,"top":["メンバー","事例","cm"],"color":"--cat-other"},{"key":"reputation","label":"評判","desc":"評判・口コミ","imp":1607,"clicks":122,"pct":2.1,"top":["評判","株式会社 評判"],"color":"--cat-reputation","ctr":"CTR 7.6%"},{"key":"news","label":"ニュース","desc":"資金調達・ニュース・note","imp":1193,"clicks":144,"pct":1.5,"top":["資金調達","note","プレスリリース"],"color":"--cat-news"}],"periodStart":"2025-04-01","periodEnd":"2026-08-31","impressions":78121,"clicks":31676,"excludedStartDays":23,"excludedEndDays":29};
+const MONTHLY = {"rows":[["2025-04-01",2820,1048],["2025-05-01",2916,1132],["2025-06-01",3440,1221],["2025-07-01",3466,1372],["2025-08-01",3116,1296],["2025-09-01",3698,1419],["2025-10-01",5064,1937],["2025-11-01",6135,2819],["2025-12-01",4796,1837],["2026-01-01",4589,1737],["2026-02-01",4736,1727],["2026-03-01",6550,2708],["2026-04-01",5686,2387],["2026-05-01",5633,2403],["2026-06-01",5528,2438],["2026-07-01",5661,2390],["2026-08-01",4287,1805]],"months":17,"categories":[{"key":"exact","label":"ブランド指名","desc":"facilo / ファシロ のみ","imp":48062,"clicks":17437,"pct":61.5,"top":[],"color":"--cat-exact","queryCount":2,"queries":[{"query":"facilo","imp":32655,"clicks":11960},{"query":"ファシロ","imp":15407,"clicks":5477}],"remaining":{"queryCount":0,"imp":0,"clicks":0}},{"key":"corporate","label":"企業調査","desc":"会社情報・代表名","imp":10277,"clicks":3561,"pct":13.2,"top":["株式会社","とは","市川"],"color":"--cat-corporate","queryCount":16,"queries":[{"query":"株式会社facilo","imp":7230,"clicks":2869},{"query":"株式会社ファシロ","imp":1037,"clicks":254},{"query":"ファシロとは","imp":423,"clicks":58},{"query":"株式会社 facilo","imp":365,"clicks":109},{"query":"facilo 市川","imp":360,"clicks":151},{"query":"faciloとは","imp":247,"clicks":35},{"query":"株式会社facilo 従業員数","imp":199,"clicks":10},{"query":"株式会社facilo 上場","imp":191,"clicks":19},{"query":"facilo 会社","imp":67,"clicks":36},{"query":"facilo 従業員数","imp":48,"clicks":0}],"remaining":{"queryCount":6,"imp":110,"clicks":20}},{"key":"product","label":"プロダクト","desc":"サービス・料金・機能","imp":6109,"clicks":2164,"pct":7.8,"top":["不動産","料金","マーケットプレイス"],"color":"--cat-product","queryCount":8,"queries":[{"query":"ファシロ 不動産","imp":4712,"clicks":1738},{"query":"facilo 不動産","imp":897,"clicks":294},{"query":"facilo 料金","imp":337,"clicks":89},{"query":"faciloマーケットプレイス","imp":72,"clicks":12},{"query":"facilo 賃貸","imp":29,"clicks":15},{"query":"ファシロ レインズ","imp":26,"clicks":7},{"query":"facilo 購入クラウド ヘルプページ site:facilo.jp","imp":20,"clicks":0},{"query":"不動産 ファシロ","imp":16,"clicks":9}],"remaining":{"queryCount":0,"imp":0,"clicks":0}},{"key":"navigation","label":"ナビゲーション","desc":"ログイン・ログオン","imp":5338,"clicks":4798,"pct":6.8,"top":["ログイン"],"color":"--cat-navigation","queryCount":3,"queries":[{"query":"ファシロ ログイン","imp":2942,"clicks":2710},{"query":"facilo ログイン","imp":1943,"clicks":1662},{"query":"ファシロログイン","imp":453,"clicks":426}],"remaining":{"queryCount":0,"imp":0,"clicks":0},"ctr":"CTR 89.9%"},{"key":"recruitment","label":"採用","desc":"採用・求人・給与・職場情報","imp":3824,"clicks":2411,"pct":4.9,"top":["採用","年収","株式会社 求人"],"color":"--cat-recruitment","queryCount":6,"queries":[{"query":"facilo 採用","imp":2340,"clicks":1680},{"query":"ファシロ 採用","imp":785,"clicks":504},{"query":"facilo 年収","imp":481,"clicks":125},{"query":"株式会社facilo 求人","imp":123,"clicks":55},{"query":"facilo 求人","imp":50,"clicks":22},{"query":"株式会社facilo 採用","imp":45,"clicks":25}],"remaining":{"queryCount":0,"imp":0,"clicks":0}},{"key":"other","label":"その他","desc":"上記に当てはまらない検索","imp":1711,"clicks":1039,"pct":2.2,"top":["メンバー","事例","cm"],"color":"--cat-other","queryCount":21,"queries":[{"query":"facilo メンバー","imp":628,"clicks":497},{"query":"ファシロ メンバー","imp":315,"clicks":266},{"query":"facilo 事例","imp":224,"clicks":141},{"query":"facilo cm","imp":119,"clicks":42},{"query":"facilo.jp","imp":85,"clicks":10},{"query":"ファシロ cm","imp":84,"clicks":15},{"query":"facilo japan","imp":69,"clicks":20},{"query":"facilo company","imp":36,"clicks":0},{"query":"facilo バッテリィズ","imp":35,"clicks":23},{"query":"facilog","imp":34,"clicks":0}],"remaining":{"queryCount":11,"imp":82,"clicks":25}},{"key":"reputation","label":"評判","desc":"評判・口コミ","imp":1607,"clicks":122,"pct":2.1,"top":["評判","株式会社 評判"],"color":"--cat-reputation","queryCount":3,"queries":[{"query":"facilo 評判","imp":956,"clicks":91},{"query":"株式会社facilo 評判","imp":587,"clicks":30},{"query":"ファシロ 評判","imp":64,"clicks":1}],"remaining":{"queryCount":0,"imp":0,"clicks":0},"ctr":"CTR 7.6%"},{"key":"news","label":"ニュース","desc":"資金調達・ニュース・note","imp":1193,"clicks":144,"pct":1.5,"top":["資金調達","note","プレスリリース"],"color":"--cat-news","queryCount":6,"queries":[{"query":"facilo 資金調達","imp":600,"clicks":96},{"query":"facilo note","imp":569,"clicks":43},{"query":"ファシロ 資金調達","imp":18,"clicks":4},{"query":"facilo プレスリリース","imp":3,"clicks":1},{"query":"note facilo","imp":2,"clicks":0},{"query":"株式会社facilo 資金調達","imp":1,"clicks":0}],"remaining":{"queryCount":0,"imp":0,"clicks":0}}],"periodStart":"2025-04-01","periodEnd":"2026-08-31","impressions":78121,"clicks":31676,"excludedStartDays":23,"excludedEndDays":29};
 let mode = 'weekly';
 let data, imps, sma12, med8, p25_8, totalImp, avgImp, peakImp, peakIdx, growthPct, p25growth;
-let activeSummary;
+let activeSummary, plotDates;
 const unit = () => mode === 'weekly' ? '週' : 'か月';
 const shortUnit = () => mode === 'weekly' ? 'w' : 'm';
 const periodLabel = () => mode === 'weekly' ? '週次' : '月次';
@@ -355,12 +384,18 @@ function compareEdges(values) {
 }
 function formatGrowth(value) { return value === null ? '—' : `${value >= 0 ? '+' : ''}${value}%`; }
 
+const PRESS_RELEASES = [
+  {date:'2026-09-10', label:'中央大学との「仲介力」共同研究・宅建講座無償提供'},
+  {date:'2026-09-17', label:'シリーズB・総額64億円の資金調達、コラビットのグループ参画'},
+  {date:'2026-10-01', label:'AI駆動の3プロダクトを新規発表'},
+];
 const EVENTS = [
   { type: 'line', date: '2025-09-08', label: 'PR: 事業用CL', color: 'ev-pr' },
   { type: 'line', date: '2025-09-15', label: 'PR: 賃貸CL+住宅新報', color: 'ev-pr' },
   { type: 'line', date: '2025-09-29', label: 'PR: DXリサーチ', color: 'ev-pr' },
   { type: 'band', start: '2025-11-03', end: '2025-12-08', label: '秋CP (CM+Taxi+YT+OOH ~7000万)', color: 'autumn' },
   { type: 'band', start: '2026-05-11', end: '2026-05-25', label: '春CP (Taxi+YT+正直不動産)', color: 'spring' },
+  ...PRESS_RELEASES.map(pr => ({type:'line', ...pr, color:'ev-pr'})),
 ];
 const EVENT_POINTS = {
   '2025-09-08': 'PR: 事業用CL(9/12)',
@@ -393,13 +428,35 @@ const SERIES = [
 ];
 
 function dateToIdx(ds) {
-  const key = mode === 'monthly' ? ds.slice(0,7) + '-01' : ds;
-  for(let i=0;i<data.length;i++) if(data[i].date>=key) return i;
-  return data.length-1;
+  const key = periodKey(ds);
+  for(let i=0;i<plotDates.length;i++) if(plotDates[i]>=key) return i;
+  return plotDates.length-1;
+}
+function periodKey(ds) {
+  if(mode === 'monthly') return ds.slice(0,7) + '-01';
+  const day = new Date(ds+'T00:00:00Z');
+  day.setUTCDate(day.getUTCDate() - (day.getUTCDay()+6)%7);
+  return day.toISOString().slice(0,10);
+}
+function chartDates() {
+  const result = data.map(d=>d.date);
+  const end = visible.events ? periodKey(PRESS_RELEASES.at(-1).date) : result.at(-1);
+  while(result.at(-1)<end) {
+    const next = new Date(result.at(-1)+'T00:00:00Z');
+    if(mode==='monthly') next.setUTCMonth(next.getUTCMonth()+1); else next.setUTCDate(next.getUTCDate()+7);
+    result.push(next.toISOString().slice(0,10));
+  }
+  return result;
 }
 function eventNote(ds) {
-  if(mode === 'weekly') return EVENT_POINTS[ds];
-  return Object.entries(EVENT_POINTS).filter(([day]) => day.slice(0,7) === ds.slice(0,7)).map(([,note]) => note).join('<br>');
+  const older = Object.entries(EVENT_POINTS).filter(([day])=>periodKey(day)===ds).map(([,note])=>escapeHtml(note));
+  const current = PRESS_RELEASES.filter(pr=>periodKey(pr.date)===ds).map(pr=>`${formatDate(pr.date)} PR：${escapeHtml(pr.label)}`);
+  return [...older,...current].join('<br>');
+}
+function renderPressReleases() {
+  const el = document.getElementById('prNotes');
+  el.hidden = !visible.events;
+  el.innerHTML = `<div class="pr-title">2026年 秋のPRラッシュ</div><ol class="pr-list">${PRESS_RELEASES.map(pr=>`<li><span class="pr-date">${formatDate(pr.date)}</span>${escapeHtml(pr.label)}${pr.date>activeSummary.periodEnd?`<span class="pr-pending">この${mode==='weekly'?'週':'月'}の検索データは未集計</span>`:''}</li>`).join('')}</ol><p class="pr-caveat">紫線は発表日を含む${mode==='weekly'?'週':'月'}。検索データが揃わない期間は線を延ばさず空欄にしています。発表との時期の比較用で、検索増加の原因を断定するものではありません。</p>`;
 }
 
 function buildLegend() {
@@ -419,6 +476,8 @@ function buildLegend() {
 }
 
 function render() {
+  plotDates = chartDates();
+  renderPressReleases();
   const wrap = document.getElementById('chartWrap');
   const container = document.getElementById('chartContainer');
   const tooltip = document.getElementById('tooltip');
@@ -437,7 +496,7 @@ function render() {
   const scaleStep = mode === 'weekly' ? 200 : 1000;
   const maxV = Math.max(scaleStep, Math.ceil((Math.max(...(allVis.length?allVis:imps))*1.08)/scaleStep)*scaleStep);
 
-  const x = i => mg.left + (i/(data.length-1))*cw;
+  const x = i => mg.left + (i/(plotDates.length-1))*cw;
   const y = v => mg.top + ch - (v/maxV)*ch;
   const xDate = d => x(dateToIdx(d));
 
@@ -445,16 +504,20 @@ function render() {
   const yTicks = []; for(let v=0;v<=maxV;v+=yStep) yTicks.push(v);
 
   const months = []; let lastM = '';
-  data.forEach((d,i)=>{ const mm=d.date.substring(0,7); if(mm!==lastM){months.push({i,label:fmtMonth(d.date)});lastM=mm;} });
+  plotDates.forEach((ds,i)=>{ const mm=ds.substring(0,7); if(mm!==lastM){months.push({i,label:fmtMonth(ds)});lastM=mm;} });
   function fmtMonth(ds){ const[yr,mo]=ds.split('-'); const n=parseInt(mo,10); return n===1?`${yr.slice(2)}年1月`:`${n}月`; }
   function linePath(vals){ let d='',st=false; vals.forEach((v,i)=>{if(v===null)return; if(!st){d=`M ${x(i)} ${y(v)}`;st=true;} else d+=` L ${x(i)} ${y(v)}`;}); return d; }
 
   let s = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  if(plotDates.length>data.length) {
+    const blankStart = x(data.length-1) + cw/(plotDates.length-1)/2;
+    s+=`<rect x="${blankStart}" y="${mg.top}" width="${W-mg.right-blankStart}" height="${ch}" fill="var(--def-bg)" data-uncollected="true"/>`;
+  }
   if(visible.events){
     EVENTS.forEach(ev=>{
       if(ev.type==='band'){
         if(ev.end < activeSummary.periodStart || ev.start > activeSummary.periodEnd) return;
-        const pad = mode === 'monthly' ? cw/(data.length-1)*.45 : 0;
+        const pad = mode === 'monthly' ? cw/(plotDates.length-1)*.45 : 0;
         const x1=Math.max(mg.left,xDate(ev.start)-pad),x2=Math.min(W-mg.right,xDate(ev.end)+pad);
         const fill=ev.color==='autumn'?'var(--ev-autumn)':'var(--ev-spring)';
         const stroke=ev.color==='autumn'?'var(--ev-autumn-line)':'var(--ev-spring-line)';
@@ -463,12 +526,13 @@ function render() {
         s+=`<line x1="${x2}" x2="${x2}" y1="${mg.top}" y2="${mg.top+ch}" stroke="${stroke}" stroke-width="1"/>`;
         s+=`<text x="${(x1+x2)/2}" y="${mg.top-6}" text-anchor="middle" fill="var(--ev-label)" font-size="10" font-family="system-ui" font-weight="500">${ev.color==='autumn'?'秋CP':'春CP'}</text>`;
       } else {
-        if(ev.date < activeSummary.periodStart || ev.date > activeSummary.periodEnd) return;
+        if(ev.date < activeSummary.periodStart || periodKey(ev.date) > plotDates.at(-1)) return;
         const lx=xDate(ev.date);
-        s+=`<line x1="${lx}" x2="${lx}" y1="${mg.top}" y2="${mg.top+ch}" stroke="var(--ev-pr)" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+        s+=`<line x1="${lx}" x2="${lx}" y1="${mg.top}" y2="${mg.top+ch}" stroke="var(--ev-pr)" stroke-width="1.5" stroke-dasharray="4 3" data-event-date="${ev.date}"><title>${ev.date} ${escapeHtml(ev.label)}</title></line>`;
       }
     });
-    if(activeSummary.periodStart <= '2025-09-15' && activeSummary.periodEnd >= '2025-09-15') s+=`<text x="${xDate('2025-09-15')}" y="${mg.top-6}" text-anchor="middle" fill="var(--ev-label)" font-size="10" font-family="system-ui" font-weight="500">PRラッシュ</text>`;
+    if(activeSummary.periodStart <= '2025-09-15' && activeSummary.periodEnd >= '2025-09-15') s+=`<text x="${xDate('2025-09-15')}" y="${mg.top-6}" text-anchor="middle" fill="var(--ev-label)" font-size="10" font-family="system-ui" font-weight="500">2025年 PRラッシュ</text>`;
+    if(activeSummary.periodStart <= PRESS_RELEASES.at(-1).date) s+=`<text x="${xDate('2026-10-01')}" y="${mg.top-6}" text-anchor="end" fill="var(--ev-label)" font-size="10" font-family="system-ui" font-weight="500">2026年 PRラッシュ</text>`;
   }
   yTicks.forEach(v=>{s+=`<line x1="${mg.left}" x2="${W-mg.right}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)" stroke-width="1"/>`;});
   if(visible.imp){
@@ -489,8 +553,8 @@ function render() {
 
   yTicks.forEach(v=>{s+=`<text x="${mg.left-8}" y="${y(v)+4}" text-anchor="end" fill="var(--text-muted)" font-size="11" font-family="system-ui">${v.toLocaleString()}</text>`;});
   months.forEach(({i:mi,label})=>{s+=`<text x="${x(mi)}" y="${H-8}" text-anchor="start" fill="var(--text-muted)" font-size="11" font-family="system-ui">${label}</text>`;});
-  const hitW = cw/data.length;
-  data.forEach((_,i)=>{s+=`<rect x="${x(i)-hitW/2}" y="${mg.top}" width="${hitW}" height="${ch}" fill="transparent" data-i="${i}"/>`;});
+  const hitW = cw/plotDates.length;
+  plotDates.forEach((_,i)=>{s+=`<rect x="${x(i)-hitW/2}" y="${mg.top}" width="${hitW}" height="${ch}" fill="transparent" data-i="${i}"/>`;});
   s += `</svg>`;
   container.innerHTML = s;
 
@@ -506,22 +570,23 @@ function render() {
     dot.setAttribute('stroke','var(--card)'); dot.setAttribute('stroke-width','2.5');
     dot.style.opacity='0'; dot.style.transition='opacity 0.1s'; svg.appendChild(dot); dots[ser.key]=dot;
   });
-  function getVal(k,i){ if(k==='imp')return imps[i]; if(k==='sma')return sma12[i]; if(k==='median')return med8[i]; if(k==='p25')return p25_8[i]; return null; }
+  function getVal(k,i){ if(i>=data.length)return null; if(k==='imp')return imps[i]; if(k==='sma')return sma12[i]; if(k==='median')return med8[i]; if(k==='p25')return p25_8[i]; return null; }
 
   svg.addEventListener('mousemove', e=>{
     const rect=svg.getBoundingClientRect(); const ratio=W/rect.width; const mx=(e.clientX-rect.left)*ratio;
-    let ci=0,minD=Infinity; data.forEach((_,i)=>{const d=Math.abs(x(i)-mx); if(d<minD){minD=d;ci=i;}});
+    let ci=0,minD=Infinity; plotDates.forEach((_,i)=>{const d=Math.abs(x(i)-mx); if(d<minD){minD=d;ci=i;}});
     cross.setAttribute('x1',x(ci)); cross.setAttribute('x2',x(ci)); cross.style.opacity='0.4';
     SERIES.forEach(ser=>{const v=getVal(ser.key,ci); if(v!==null&&visible[ser.key]){dots[ser.key].setAttribute('cx',x(ci));dots[ser.key].setAttribute('cy',y(v));dots[ser.key].style.opacity='1';}else dots[ser.key].style.opacity='0';});
-    const d=data[ci];
+    const d=data[ci] || {date:plotDates[ci]};
     let html=`<div class="tooltip-week">${formatPeriod(d.date)}</div>`;
     SERIES.forEach(ser=>{if(!visible[ser.key])return; const v=getVal(ser.key,ci); if(v===null)return; html+=`<div class="tooltip-row"><span class="tooltip-label"><span class="tooltip-dot" style="background:var(${ser.color})"></span>${ser.label}</span><span class="tooltip-val">${v.toLocaleString()}</span></div>`;});
-    if(visible.imp) html+=`<div class="tooltip-row"><span class="tooltip-label">clicks</span><span class="tooltip-val">${d.clicks.toLocaleString()}</span></div>`;
+    if(visible.imp&&ci<data.length) html+=`<div class="tooltip-row"><span class="tooltip-label">clicks</span><span class="tooltip-val">${d.clicks.toLocaleString()}</span></div>`;
+    if(ci>=data.length) html+='<div class="tooltip-row">検索データは未集計</div>';
     const evNote=eventNote(d.date); if(evNote&&visible.events) html+=`<div class="tooltip-event">${evNote}</div>`;
     tooltip.innerHTML=html; tooltip.classList.add('visible');
     const tipR=tooltip.getBoundingClientRect(); const wrapR=wrap.getBoundingClientRect();
     let tx=(x(ci)/ratio)+14; if(tx+tipR.width>wrapR.width-8) tx=(x(ci)/ratio)-tipR.width-14;
-    let ty=Math.max(0,(y(imps[ci])/ratio)-tipR.height/2); ty=Math.min(ty,wrapR.height-tipR.height);
+    let ty=Math.max(0,(y(imps[ci]??maxV/2)/ratio)-tipR.height/2); ty=Math.min(ty,wrapR.height-tipR.height);
     tooltip.style.left=tx+'px'; tooltip.style.top=ty+'px';
   });
   svg.addEventListener('mouseleave',()=>{cross.style.opacity='0';Object.values(dots).forEach(d=>d.style.opacity='0');tooltip.classList.remove('visible');});
@@ -534,21 +599,26 @@ function render() {
     <div class="stat"><div class="stat-label">P25成長率</div><div class="stat-value ${p25growth===null?'':p25growth>=0?'pos':'neg'}">${formatGrowth(p25growth)}</div><div class="stat-detail">${p25growth===null?'比較できる値が不足':'床の底上げ'}</div></div>`;
 }
 
-const CATS = [{"key":"exact","label":"ブランド指名","desc":"facilo / ファシロ のみ","imp":52586,"clicks":19069,"pct":61.7,"top":[],"color":"--cat-exact"},{"key":"corporate","label":"企業調査","desc":"会社情報・代表名","imp":11083,"clicks":3835,"pct":13.0,"top":["株式会社","とは","市川"],"color":"--cat-corporate"},{"key":"product","label":"プロダクト","desc":"サービス・料金・機能","imp":6730,"clicks":2388,"pct":7.9,"top":["不動産","料金","マーケットプレイス"],"color":"--cat-product"},{"key":"navigation","label":"ナビゲーション","desc":"ログイン・ログオン","imp":5807,"clicks":5231,"pct":6.8,"top":["ログイン"],"color":"--cat-navigation","ctr":"CTR 90.1%"},{"key":"recruitment","label":"採用","desc":"採用・求人・給与・職場情報","imp":4130,"clicks":2609,"pct":4.8,"top":["採用","年収","株式会社 求人"],"color":"--cat-recruitment"},{"key":"other","label":"その他","desc":"上記に当てはまらない検索","imp":1872,"clicks":1122,"pct":2.2,"top":["メンバー","事例","cm"],"color":"--cat-other"},{"key":"reputation","label":"評判","desc":"評判・口コミ","imp":1681,"clicks":127,"pct":2.0,"top":["評判","株式会社 評判"],"color":"--cat-reputation","ctr":"CTR 7.6%"},{"key":"news","label":"ニュース","desc":"資金調達・ニュース・note","imp":1389,"clicks":189,"pct":1.6,"top":["資金調達","note","調達"],"color":"--cat-news"}];
+const CATS = [{"key":"exact","label":"ブランド指名","desc":"facilo / ファシロ のみ","imp":52586,"clicks":19069,"pct":61.7,"top":[],"color":"--cat-exact","queryCount":2,"queries":[{"query":"facilo","imp":35894,"clicks":13204},{"query":"ファシロ","imp":16692,"clicks":5865}],"remaining":{"queryCount":0,"imp":0,"clicks":0}},{"key":"corporate","label":"企業調査","desc":"会社情報・代表名","imp":11083,"clicks":3835,"pct":13.0,"top":["株式会社","とは","市川"],"color":"--cat-corporate","queryCount":17,"queries":[{"query":"株式会社facilo","imp":7803,"clicks":3100},{"query":"株式会社ファシロ","imp":1141,"clicks":278},{"query":"ファシロとは","imp":448,"clicks":59},{"query":"facilo 市川","imp":381,"clicks":154},{"query":"株式会社 facilo","imp":379,"clicks":116},{"query":"faciloとは","imp":265,"clicks":40},{"query":"株式会社facilo 従業員数","imp":202,"clicks":10},{"query":"株式会社facilo 上場","imp":191,"clicks":19},{"query":"facilo 会社","imp":67,"clicks":36},{"query":"facilo 従業員数","imp":48,"clicks":0}],"remaining":{"queryCount":7,"imp":158,"clicks":23}},{"key":"product","label":"プロダクト","desc":"サービス・料金・機能","imp":6730,"clicks":2388,"pct":7.9,"top":["不動産","料金","マーケットプレイス"],"color":"--cat-product","queryCount":9,"queries":[{"query":"ファシロ 不動産","imp":5125,"clicks":1893},{"query":"facilo 不動産","imp":1017,"clicks":336},{"query":"facilo 料金","imp":360,"clicks":92},{"query":"faciloマーケットプレイス","imp":92,"clicks":17},{"query":"ファシロ レインズ","imp":56,"clicks":23},{"query":"facilo 賃貸","imp":29,"clicks":15},{"query":"facilo 購入クラウド ヘルプページ site:facilo.jp","imp":20,"clicks":0},{"query":"不動産 ファシロ","imp":16,"clicks":9},{"query":"ファシロマーケットプレイス","imp":15,"clicks":3}],"remaining":{"queryCount":0,"imp":0,"clicks":0}},{"key":"navigation","label":"ナビゲーション","desc":"ログイン・ログオン","imp":5807,"clicks":5231,"pct":6.8,"top":["ログイン"],"color":"--cat-navigation","queryCount":3,"queries":[{"query":"ファシロ ログイン","imp":3255,"clicks":3008},{"query":"facilo ログイン","imp":2065,"clicks":1766},{"query":"ファシロログイン","imp":487,"clicks":457}],"remaining":{"queryCount":0,"imp":0,"clicks":0},"ctr":"CTR 90.1%"},{"key":"recruitment","label":"採用","desc":"採用・求人・給与・職場情報","imp":4130,"clicks":2609,"pct":4.8,"top":["採用","年収","株式会社 求人"],"color":"--cat-recruitment","queryCount":6,"queries":[{"query":"facilo 採用","imp":2533,"clicks":1821},{"query":"ファシロ 採用","imp":832,"clicks":538},{"query":"facilo 年収","imp":525,"clicks":133},{"query":"株式会社facilo 求人","imp":123,"clicks":55},{"query":"株式会社facilo 採用","imp":61,"clicks":37},{"query":"facilo 求人","imp":56,"clicks":25}],"remaining":{"queryCount":0,"imp":0,"clicks":0}},{"key":"other","label":"その他","desc":"上記に当てはまらない検索","imp":1872,"clicks":1122,"pct":2.2,"top":["メンバー","事例","cm"],"color":"--cat-other","queryCount":22,"queries":[{"query":"facilo メンバー","imp":687,"clicks":547},{"query":"ファシロ メンバー","imp":350,"clicks":294},{"query":"facilo 事例","imp":229,"clicks":146},{"query":"facilo cm","imp":119,"clicks":42},{"query":"facilo.jp","imp":85,"clicks":10},{"query":"ファシロ cm","imp":84,"clicks":15},{"query":"facilo japan","imp":69,"clicks":20},{"query":"site:facilo.jp","imp":46,"clicks":0},{"query":"facilo company","imp":36,"clicks":0},{"query":"facilo バッテリィズ","imp":35,"clicks":23}],"remaining":{"queryCount":12,"imp":132,"clicks":25}},{"key":"reputation","label":"評判","desc":"評判・口コミ","imp":1681,"clicks":127,"pct":2.0,"top":["評判","株式会社 評判"],"color":"--cat-reputation","queryCount":3,"queries":[{"query":"facilo 評判","imp":1002,"clicks":95},{"query":"株式会社facilo 評判","imp":615,"clicks":31},{"query":"ファシロ 評判","imp":64,"clicks":1}],"remaining":{"queryCount":0,"imp":0,"clicks":0},"ctr":"CTR 7.6%"},{"key":"news","label":"ニュース","desc":"資金調達・ニュース・note","imp":1389,"clicks":189,"pct":1.6,"top":["資金調達","note","調達"],"color":"--cat-news","queryCount":8,"queries":[{"query":"facilo 資金調達","imp":756,"clicks":136},{"query":"facilo note","imp":597,"clicks":43},{"query":"ファシロ 資金調達","imp":18,"clicks":4},{"query":"facilo 調達","imp":8,"clicks":5},{"query":"facilo prtimes","imp":4,"clicks":0},{"query":"facilo プレスリリース","imp":3,"clicks":1},{"query":"note facilo","imp":2,"clicks":0},{"query":"株式会社facilo 資金調達","imp":1,"clicks":0}],"remaining":{"queryCount":0,"imp":0,"clicks":0}}];
 
 function escapeHtml(value) { return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function renderCategories(cats) {
 const maxCatImp = Math.max(1, ...cats.map(c => c.imp));
 const catEl = document.getElementById('catChart');
+const opened = catEl.children.length ? new Set([...catEl.querySelectorAll('details[open]')].map(el=>el.dataset.category)) : new Set(['exact']);
 let catHtml = '';
 cats.forEach(c => {
   const barW = Math.max(2, (c.imp / maxCatImp) * 100);
   const kwTags = c.top.map(k => `<span class="cat-kw-tag">${escapeHtml(k)}</span>`).join('');
   const ctrBadge = c.ctr ? `<span class="cat-kw-tag" style="color:var(${c.color});border-color:var(${c.color})">${c.ctr}</span>` : '';
-  catHtml += `<div class="cat-row">
+  const pct = n => c.imp ? (n/c.imp*100).toFixed(1)+'%' : '—';
+  const rows = c.queries.map(q=>`<tr><td>${escapeHtml(q.query)}</td><td>${q.imp.toLocaleString()}</td><td>${pct(q.imp)}</td><td>${q.clicks.toLocaleString()}</td></tr>`).join('');
+  const rest = c.remaining.queryCount ? `<tr class="query-rest"><td>その他（${c.remaining.queryCount}語）</td><td>${c.remaining.imp.toLocaleString()}</td><td>${pct(c.remaining.imp)}</td><td>${c.remaining.clicks.toLocaleString()}</td></tr>` : '';
+  catHtml += `<details class="cat-group" data-category="${c.key}" ${opened.has(c.key)?'open':''}><summary class="cat-row">
     <div class="cat-label-col">
       <div class="cat-name"><span class="cat-dot" style="background:var(${c.color})"></span>${c.label}</div>
       <div class="cat-desc">${c.desc}</div>
+      <span class="cat-expand">検索語の内訳 ▾</span>
     </div>
     <div class="cat-bar-col">
       <div class="cat-bar-wrap">
@@ -560,7 +630,7 @@ cats.forEach(c => {
       <div class="cat-imp">${c.imp.toLocaleString()}</div>
       <div class="cat-pct">${c.pct}%</div>
     </div>
-  </div>`;
+  </summary><div class="query-detail"><p class="query-caption">${c.queryCount}語中 ${c.queries.length}語を表示・表示回数順 ／ ${formatDate(activeSummary.periodStart)}〜${formatDate(activeSummary.periodEnd)}</p><table class="query-table" aria-label="${c.label}の検索語内訳"><thead><tr><th scope="col">検索語</th><th scope="col">表示回数</th><th scope="col">構成比</th><th scope="col">クリック</th></tr></thead><tbody>${rows}${rest}<tr class="query-total"><td>カテゴリ合計</td><td>${c.imp.toLocaleString()}</td><td>${c.imp?'100%':'—'}</td><td>${c.clicks.toLocaleString()}</td></tr></tbody></table></div></details>`;
 });
 catEl.innerHTML = catHtml;
 const nav = cats.find(c => c.key === 'navigation'), rep = cats.find(c => c.key === 'reputation');
