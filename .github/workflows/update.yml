@@ -22,6 +22,23 @@ on:
         type: boolean
         default: false
 
+      gsc_collect:
+        description: '本番GSC取得とSheet保存（本番切替後のみ。公開はpublishもtrue）'
+        type: boolean
+        default: false
+      backup_manifest:
+        description: '公開だけ再実行する場合の保存完了manifestファイルID'
+        type: string
+        default: ''
+      restore_generation:
+        description: '復元するバックアップのファイルID（定期停止・復元承認後のみ）'
+        type: string
+        default: ''
+      restore_fingerprint:
+        description: '復元承認時に確認した現在のSheet全件SHA256'
+        type: string
+        default: ''
+
 permissions: {}
 concurrency:
   group: branded-search-production
@@ -31,13 +48,30 @@ jobs:
   build:
     if: github.repository == 'facilo-corp/branded-search-monitoring' && github.ref == 'refs/heads/main' && vars.AUTOMATION_ENABLED == 'true' && !inputs.gsc_rehearsal && (github.event_name == 'workflow_dispatch' || vars.SCHEDULE_ENABLED == 'true')
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: write
       id-token: write
     outputs:
       sha256: ${{ steps.digest.outputs.sha256 }}
       revision: ${{ steps.commit.outputs.revision }}
+      publish: ${{ steps.mode.outputs.publish }}
+    env:
+      AUTOMATION_ENABLED: ${{ vars.AUTOMATION_ENABLED }}
+      SCHEDULE_ENABLED: ${{ vars.SCHEDULE_ENABLED }}
+      PRODUCTION_ENABLED: ${{ vars.PRODUCTION_ENABLED }}
+      LEGACY_GAS_STOPPED: ${{ vars.LEGACY_GAS_STOPPED }}
+      RESTORE_ENABLED: ${{ vars.RESTORE_ENABLED }}
+      PRODUCTION_BACKUP_FOLDER_ID: ${{ vars.PRODUCTION_BACKUP_FOLDER_ID }}
+      SHEET_ID: ${{ vars.SHEET_ID }}
+      PUBLISH: ${{ inputs.publish }}
+      COMPARE: ${{ inputs.gsc_compare }}
+      REHEARSE: ${{ inputs.gsc_rehearsal }}
+      COLLECT: ${{ inputs.gsc_collect }}
+      COMPARISON_END_DATE: ${{ inputs.comparison_end_date }}
+      BACKUP_MANIFEST: ${{ inputs.backup_manifest }}
+      RESTORE_GENERATION: ${{ inputs.restore_generation }}
+      RESTORE_FINGERPRINT: ${{ inputs.restore_fingerprint }}
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -60,6 +94,9 @@ jobs:
         run: |
           python -c "import os; assert all(os.environ.get(k) for k in ('SHEET_ID', 'WIF_PROVIDER', 'SERVICE_ACCOUNT')), 'Google configuration is incomplete'"
           python -c "import os; c=os.environ.get('COMPARE')=='true'; assert not(c and os.environ.get('PUBLISH')=='true'), 'Compare mode cannot publish'; assert not c or os.environ.get('COLLECTOR'), 'Collector configuration is incomplete'"
+      - name: Validate mode and fixed production targets before authentication
+        id: mode
+        run: python src/production.py --check-config
       - name: Authenticate collector for read-only comparison
         if: github.event_name == 'workflow_dispatch' && inputs.gsc_compare
         id: collector_auth
@@ -117,7 +154,7 @@ jobs:
           create_credentials_file: false
           export_environment_variables: false
       - name: Read and build (no Sheet writes)
-        if: '!inputs.gsc_compare'
+        if: steps.mode.outputs.mode == 'legacy' || steps.mode.outputs.mode == 'preview'
         env:
           GOOGLE_ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
           SHEET_ID: ${{ vars.SHEET_ID }}
@@ -125,12 +162,46 @@ jobs:
           python src/fetch_sheet.py --output "$RUNNER_TEMP/branded-source.json"
           python src/dashboard.py --input "$RUNNER_TEMP/branded-source.json"
           python src/verify_site.py --file site/index.html
+      - name: Authenticate production collector
+        if: steps.mode.outputs.mode == 'collect' || steps.mode.outputs.mode == 'restore'
+        id: production_collector
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GOOGLE_WIF_PROVIDER }}
+          service_account: ${{ vars.GOOGLE_COLLECTOR_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/webmasters.readonly,https://www.googleapis.com/auth/spreadsheets
+          access_token_lifetime: 1800s
+          create_credentials_file: false
+          export_environment_variables: false
+      - name: Authenticate production backup account
+        if: steps.mode.outputs.mode == 'collect' || steps.mode.outputs.mode == 'restore' || steps.mode.outputs.mode == 'publish'
+        id: production_backup
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GOOGLE_WIF_PROVIDER }}
+          service_account: ${{ vars.GOOGLE_BACKUP_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: ${{ steps.mode.outputs.mode == 'publish' && 'https://www.googleapis.com/auth/drive.readonly' || 'https://www.googleapis.com/auth/drive' }}
+          access_token_lifetime: 1800s
+          create_credentials_file: false
+          export_environment_variables: false
+      - name: Execute checked production operation
+        if: steps.mode.outputs.mode == 'collect' || steps.mode.outputs.mode == 'restore' || steps.mode.outputs.mode == 'publish'
+        env:
+          GOOGLE_READER_TOKEN: ${{ steps.auth.outputs.access_token }}
+          GOOGLE_COLLECTOR_TOKEN: ${{ steps.production_collector.outputs.access_token }}
+          GOOGLE_BACKUP_TOKEN: ${{ steps.production_backup.outputs.access_token }}
+        run: python src/production.py
+      - name: Validate generated production page
+        if: steps.mode.outputs.mode == 'collect' || steps.mode.outputs.mode == 'publish'
+        run: python src/verify_site.py --file site/index.html
       - name: Remove private source snapshot
         if: always()
         run: |
           python -c "import os,pathlib; pathlib.Path(os.environ['RUNNER_TEMP'],'branded-source.json').unlink(missing_ok=True)"
       - name: Digest and public build summary
-        if: '!inputs.gsc_compare'
+        if: steps.mode.outputs.mode != 'compare' && steps.mode.outputs.mode != 'restore'
         id: digest
         run: |
           python - <<'PY'
@@ -150,7 +221,7 @@ jobs:
           PY
       - name: Commit only the validated public HTML
         id: commit
-        if: github.event_name == 'schedule' || inputs.publish
+        if: steps.mode.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -164,7 +235,7 @@ jobs:
           fi
           echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Upload validated site only
-        if: github.event_name == 'schedule' || inputs.publish
+        if: steps.mode.outputs.publish == 'true'
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:
           path: site
@@ -184,6 +255,10 @@ jobs:
       REHEARSAL_SHEET_ID: ${{ vars.REHEARSAL_SHEET_ID }}
       REHEARSAL_BACKUP_FOLDER_ID: ${{ vars.REHEARSAL_BACKUP_FOLDER_ID }}
       REHEARSE: ${{ inputs.gsc_rehearsal }}
+      COLLECT: ${{ inputs.gsc_collect }}
+      BACKUP_MANIFEST: ${{ inputs.backup_manifest }}
+      RESTORE_GENERATION: ${{ inputs.restore_generation }}
+      RESTORE_FINGERPRINT: ${{ inputs.restore_fingerprint }}
       COMPARE: ${{ inputs.gsc_compare }}
       PUBLISH: ${{ inputs.publish }}
       COMPARISON_END_DATE: ${{ inputs.comparison_end_date }}
@@ -242,7 +317,7 @@ jobs:
 
   deploy:
     needs: build
-    if: ${{ !inputs.gsc_rehearsal && (github.event_name == 'schedule' || inputs.publish) }}
+    if: needs.build.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

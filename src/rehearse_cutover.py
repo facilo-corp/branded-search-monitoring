@@ -30,7 +30,9 @@ def configuration(env, require_tokens=True):
             or env.get('REHEARSAL_ENABLED') != 'true'
             or env.get('REHEARSE') != 'true'
             or env.get('PUBLISH') == 'true' or env.get('COMPARE') == 'true'
-            or env.get('COMPARISON_END_DATE')):
+            or env.get('COMPARISON_END_DATE') or env.get('COLLECT') == 'true'
+            or env.get('BACKUP_MANIFEST') or env.get('RESTORE_GENERATION')
+            or env.get('RESTORE_FINGERPRINT')):
         raise DataError('REHEARSAL_MODE: mainの手動検証だけを選択してください')
     sheet_id = env.get('REHEARSAL_SHEET_ID', '')
     folder_id = env.get('REHEARSAL_BACKUP_FOLDER_ID', '')

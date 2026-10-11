@@ -1,6 +1,6 @@
-"""Test-Sheet-only cutover primitives used by the manual rehearsal CLI.
+"""Backup and atomic Sheet primitives. Test-only entry points stay locked.
 
-The live source Sheet is deliberately blocked until a separately reviewed release.
+Production access is explicit and limited to the fixed production Sheet ID.
 Backup payloads contain private search queries: never commit or upload as artifacts.
 """
 
@@ -88,7 +88,7 @@ class DriveCreateRead:
         return self._request(base + '?' + urlencode({'alt': 'media',
                                                        'supportsAllDrives': 'true'}))
 
-    def verify_folder(self, expected_drive_id):
+    def verify_folder(self, expected_drive_id, *, require_write=True):
         url = ('https://www.googleapis.com/drive/v3/files/' + self.folder_id + '?'
                + urlencode({'supportsAllDrives': 'true',
                             'fields': 'id,mimeType,driveId,capabilities(canAddChildren)'}))
@@ -100,16 +100,18 @@ class DriveCreateRead:
         if (not isinstance(info, dict) or info.get('id') != self.folder_id
                 or info.get('mimeType') != 'application/vnd.google-apps.folder'
                 or info.get('driveId') != expected_drive_id
-                or info.get('capabilities', {}).get('canAddChildren') is not True):
+                or (require_write and info.get('capabilities', {}).get('canAddChildren') is not True)):
             raise DataError('BACKUP_FOLDER: 会社共有ドライブの保存先と作成権限を確認してください')
 
 
-class TestSheetClient:
-    """Separate, test-Sheet-only writer; the old collection CLI remains read-only."""
+class _SheetClient:
+    """Internal writer; production subclasses must opt in to the fixed target."""
+
+    production = False
 
     def __init__(self, sheet_id, token):
-        if sheet_id == PRODUCTION_SHEET_ID:
-            raise DataError('TARGET_LOCK: この確認版は本番シートを更新できません')
+        if (self.production and sheet_id != PRODUCTION_SHEET_ID) or (not self.production and sheet_id == PRODUCTION_SHEET_ID):
+            raise DataError('TARGET_LOCK: 許可されたシート以外は更新できません')
         self.reader = ReadOnlyGoogle(sheet_id, token)
         self.sheet_id, self.token = sheet_id, token
 
@@ -120,7 +122,7 @@ class TestSheetClient:
         return self.reader.metadata()
 
     def batch_update(self, payload):
-        tab_ids = set(_sheet_identity(self.metadata(), self.sheet_id).values())
+        tab_ids = set(_sheet_identity(self.metadata(), self.sheet_id, production=self.production).values())
         updated = set()
         for item in payload.get('requests', []):
             if set(item) == {'appendDimension'}:
@@ -159,13 +161,19 @@ class TestSheetClient:
             raise DataError('WRITE_RESPONSE_UNKNOWN: 更新結果を読み戻してください')
 
 
+class TestSheetClient(_SheetClient):
+    """Public rehearsal writer: still rejects the production Sheet."""
+
+
 def _digest(blob):
     return hashlib.sha256(blob).hexdigest()
 
 
-def _sheet_identity(metadata, sheet_id):
-    if metadata.get('spreadsheetId') != sheet_id or sheet_id == PRODUCTION_SHEET_ID:
-        raise DataError('TARGET_LOCK: この確認版は本番シートを更新できません')
+def _sheet_identity(metadata, sheet_id, *, production=False):
+    if (metadata.get('spreadsheetId') != sheet_id
+            or (production and sheet_id != PRODUCTION_SHEET_ID)
+            or (not production and sheet_id == PRODUCTION_SHEET_ID)):
+        raise DataError('TARGET_LOCK: 許可されたシート以外は更新できません')
     if metadata.get('properties', {}).get('timeZone') != 'Asia/Tokyo':
         raise DataError('SHEET_TIMEZONE: 対象シートの設定を確認してください')
     props = {s.get('properties', {}).get('title'): s.get('properties', {})
@@ -190,7 +198,7 @@ def _checked_data(snapshot):
     return data
 
 
-def encode_backup(snapshot, metadata, sheet_id, run_id, stage, code_version, captured_at=None):
+def encode_backup(snapshot, metadata, sheet_id, run_id, stage, code_version, captured_at=None, *, production=False):
     """Build a full-history, versioned gzip backup with no secret or token fields."""
     if stage not in ('before', 'after', 'pre-restore'):
         raise DataError('BACKUP_STAGE: 保存段階が不正です')
@@ -198,7 +206,7 @@ def encode_backup(snapshot, metadata, sheet_id, run_id, stage, code_version, cap
         raise DataError('RUN_ID: 実行IDが不正です')
     if not re.fullmatch(r'[0-9a-f]{7,40}', code_version or ''):
         raise DataError('CODE_VERSION: コード版が不正です')
-    tab_ids = _sheet_identity(metadata, sheet_id)
+    tab_ids = _sheet_identity(metadata, sheet_id, production=production)
     data = _checked_data(snapshot)
     normalized = snapshot_of(data)
     summary = aggregate(normalized, date.fromisoformat(data['日次'][-1][0]))
@@ -215,9 +223,9 @@ def encode_backup(snapshot, metadata, sheet_id, run_id, stage, code_version, cap
     return gzip.compress(raw, mtime=0), document
 
 
-def decode_backup(blob, metadata, sheet_id):
+def decode_backup(blob, metadata, sheet_id, *, production=False):
     """Reject damaged, mismatched or incomplete generations before use."""
-    tab_ids = _sheet_identity(metadata, sheet_id)
+    tab_ids = _sheet_identity(metadata, sheet_id, production=production)
     try:
         document = json.loads(gzip.decompress(blob))
     except (OSError, EOFError, UnicodeError, ValueError, TypeError):
@@ -239,7 +247,7 @@ def decode_backup(blob, metadata, sheet_id):
     return document
 
 
-def save_checked(store, name, blob, metadata, sheet_id):
+def save_checked(store, name, blob, metadata, sheet_id, *, production=False):
     """Store must expose create(name, bytes, MIME) and read(file_id), never replace/delete."""
     if not re.fullmatch(r'[A-Za-z0-9_-]{8,80}-(before|after|pre-restore)\.json\.gz', name):
         raise DataError('BACKUP_NAME: 保存名が不正です')
@@ -247,7 +255,7 @@ def save_checked(store, name, blob, metadata, sheet_id):
     returned = store.read(file_id)
     if returned != blob:
         raise DataError('BACKUP_READBACK: 保存後の読み戻しが一致しません')
-    document = decode_backup(returned, metadata, sheet_id)
+    document = decode_backup(returned, metadata, sheet_id, production=production)
     return {'id': file_id, 'name': name, 'sha256': _digest(blob),
             'fingerprint': document['fingerprint'], 'rows': document['rows']}
 
@@ -273,9 +281,9 @@ def classify_sheet(snapshot, before_fingerprint, candidate_fingerprint):
     return 'other'
 
 
-def _guard_source(source, sheet_id, expected):
+def _guard_source(source, sheet_id, expected, *, production=False):
     metadata = source.metadata()
-    _sheet_identity(metadata, sheet_id)
+    _sheet_identity(metadata, sheet_id, production=production)
     snapshot = source.snapshot()
     _checked_data(snapshot)
     if fingerprint(tables(snapshot)) != expected:
@@ -323,8 +331,11 @@ def _verify_candidate_report(before, candidate, report):
         raise DataError('REPORT_TOTALS: 集計が比較結果と一致しません')
 
 
-def _apply(source, sheet_id, candidate, metadata, before_fingerprint, candidate_fingerprint):
-    _guard_source(source, sheet_id, before_fingerprint)
+def _apply(source, sheet_id, candidate, metadata, before_fingerprint, candidate_fingerprint, *, production=False):
+    _, latest_metadata = _guard_source(source, sheet_id, before_fingerprint, production=production)
+    if (_sheet_identity(metadata, sheet_id, production=production)
+            != _sheet_identity(latest_metadata, sheet_id, production=production)):
+        raise DataError('SOURCE_METADATA_CHANGED: 書込前にタブ構造が変わりました')
     payload = batch_request(candidate, metadata)
     try:
         source.batch_update(payload)
@@ -344,8 +355,8 @@ def _apply(source, sheet_id, candidate, metadata, before_fingerprint, candidate_
         raise DataError('WRITE_MISMATCH: 保存後の全件が候補と一致しません')
 
 
-def update_test_sheet(source, store, sheet_id, candidate, report, run_id, code_version):
-    """One test-Sheet write after validated before backup; returns non-sensitive receipt."""
+def update_sheet(source, store, sheet_id, candidate, report, run_id, code_version, *, production=False):
+    """Save after checked before backup; production no-change runs back up but never write."""
     if report.get('reviewRequired') is not False or any(
             value for counts in report.get('existingPeriodDifferences', {}).values()
             for value in counts.values()):
@@ -355,38 +366,54 @@ def update_test_sheet(source, store, sheet_id, candidate, report, run_id, code_v
         raise DataError('REPORT_FINGERPRINT: 比較結果を確認してください')
     candidate_data = _checked_data(candidate)
     candidate_fingerprint = fingerprint(candidate_data)
-    if candidate_fingerprint == before_fingerprint:
+    unchanged = candidate_fingerprint == before_fingerprint
+    if unchanged and not production:
         raise DataError('NO_CHANGE: 更新対象がありません')
-    before, metadata = _guard_source(source, sheet_id, before_fingerprint)
+    before, metadata = _guard_source(source, sheet_id, before_fingerprint, production=production)
     _verify_candidate_report(before, candidate, report)
-    before_blob, _ = encode_backup(before, metadata, sheet_id, run_id, 'before', code_version)
-    before_record = save_checked(store, run_id + '-before.json.gz', before_blob, metadata, sheet_id)
-    _apply(source, sheet_id, candidate, metadata, before_fingerprint, candidate_fingerprint)
-    after, after_metadata = _guard_source(source, sheet_id, candidate_fingerprint)
-    after_blob, _ = encode_backup(after, after_metadata, sheet_id, run_id, 'after', code_version)
-    after_record = save_checked(store, run_id + '-after.json.gz', after_blob, after_metadata, sheet_id)
+    before_blob, _ = encode_backup(before, metadata, sheet_id, run_id, 'before', code_version, production=production)
+    before_record = save_checked(store, run_id + '-before.json.gz', before_blob, metadata, sheet_id, production=production)
+    if not unchanged:
+        _apply(source, sheet_id, candidate, metadata, before_fingerprint, candidate_fingerprint, production=production)
+    after, after_metadata = _guard_source(source, sheet_id, candidate_fingerprint, production=production)
+    after_blob, _ = encode_backup(after, after_metadata, sheet_id, run_id, 'after', code_version, production=production)
+    after_record = save_checked(store, run_id + '-after.json.gz', after_blob, after_metadata, sheet_id, production=production)
     manifest_record = save_manifest(store, run_id, sheet_id, code_version,
                                     before_record, after_record)
     return {'runId': run_id, 'sheetId': sheet_id, 'before': before_record,
-            'after': after_record, 'manifest': manifest_record, 'state': 'saved_and_verified'}
+            'after': after_record, 'manifest': manifest_record, 'state': 'saved_and_verified',
+            'sheetWrites': 0 if unchanged else 1}
 
 
-def restore_test_sheet(source, store, sheet_id, generation_id, run_id, code_version):
-    """Restore a selected generation to a test Sheet after preserving its current state."""
+def restore_sheet(source, store, sheet_id, generation_id, run_id, code_version, *, production=False, expected_fingerprint=None):
+    """Preserve current data, then restore. Production requires a reviewed current hash."""
     current = source.snapshot()
     metadata = source.metadata()
-    _sheet_identity(metadata, sheet_id)
+    _sheet_identity(metadata, sheet_id, production=production)
     current_data = _checked_data(current)
     current_fingerprint = fingerprint(current_data)
+    if production and (not re.fullmatch(r'[0-9a-f]{64}', expected_fingerprint or '')
+                       or expected_fingerprint != current_fingerprint):
+        raise DataError('RESTORE_REVIEW_REQUIRED: 承認時の元データと一致しません')
     selected_blob = store.read(generation_id)
-    selected = decode_backup(selected_blob, metadata, sheet_id)
+    selected = decode_backup(selected_blob, metadata, sheet_id, production=production)
     target = selected['snapshot']
     target_fingerprint = selected['fingerprint']
     if current_fingerprint == target_fingerprint:
         raise DataError('NO_CHANGE: 復元先は選択した世代と同じです')
-    before_blob, _ = encode_backup(current, metadata, sheet_id, run_id, 'pre-restore', code_version)
-    safety_record = save_checked(store, run_id + '-pre-restore.json.gz', before_blob, metadata, sheet_id)
-    _apply(source, sheet_id, target, metadata, current_fingerprint, target_fingerprint)
-    _guard_source(source, sheet_id, target_fingerprint)
+    before_blob, _ = encode_backup(current, metadata, sheet_id, run_id, 'pre-restore', code_version, production=production)
+    safety_record = save_checked(store, run_id + '-pre-restore.json.gz', before_blob, metadata, sheet_id, production=production)
+    _apply(source, sheet_id, target, metadata, current_fingerprint, target_fingerprint, production=production)
+    _guard_source(source, sheet_id, target_fingerprint, production=production)
     return {'runId': run_id, 'sheetId': sheet_id, 'selectedGeneration': generation_id,
             'preRestore': safety_record, 'state': 'restored_and_verified'}
+
+
+def update_test_sheet(source, store, sheet_id, candidate, report, run_id, code_version):
+    """The original test-only entry point cannot opt into production."""
+    return update_sheet(source, store, sheet_id, candidate, report, run_id, code_version)
+
+
+def restore_test_sheet(source, store, sheet_id, generation_id, run_id, code_version):
+    """The original test-only entry point cannot opt into production."""
+    return restore_sheet(source, store, sheet_id, generation_id, run_id, code_version)
