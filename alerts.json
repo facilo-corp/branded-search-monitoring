@@ -1,0 +1,10 @@
+{
+  "heartbeat": null,
+  "operation_id": "initial",
+  "outbox": {},
+  "owner": null,
+  "purpose": "marketing-alert-monitor-v1",
+  "revision": 0,
+  "schema": 1,
+  "workflows": {}
+}
