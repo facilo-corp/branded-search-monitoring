@@ -31,6 +31,7 @@ LABELS = {"action_required": "要対応", "watching": "再確認中", "recovered
 REASONS = {"name_email_conflict", "account_name_mismatch", "conflicting_application_names", "duplicate_email_accounts", "invalid_application", "browser_operation_unconfirmed_review", "run_time_budget_reached", "unexpected_runner_error_review_required", "non_student_account", "inactive_account", "invalid_student_id", "enrollment_name_mismatch", "duplicate_enrollment", "possible_test_application"}
 BIZIBL_STEPS = ["Run scraper (applicant data sync)", "Distribute to shared sheets", "Run schedule sync (notification sheet)"]
 BRAND_STEPS = ["Read and build (no Sheet writes)", "Deploy", "Verify exact delivery and noindex"]
+BRAND_PRODUCTION_BUILD_STEPS = ["Execute checked production operation", "Validate generated production page"]
 CONFIG = {
     "bizibl": {"name": "Bizibl同期", "repo": "facilo-corp/facilo-marketing-webinar", "workflow": 301946418,
                "path": ".github/workflows/sync.yml", "cron": ["0 21 * * *", "0 9 * * *"], "slots": [(None, 6, 0), (None, 18, 0)], "max_minutes": 25, "seed": 37688209543},
@@ -274,6 +275,22 @@ def step(run, name):
     return values[0] if len(values) == 1 else None
 
 
+def branded_publication_verified(run):
+    """Accept either reviewed build route, followed by publish and delivery checks."""
+    stages = {name: [s["conclusion"] for j in run.get("jobs", []) for s in j.get("steps", [])
+                     if s["name"] == name]
+              for name in BRAND_STEPS + BRAND_PRODUCTION_BUILD_STEPS}
+    if run.get("conclusion") != "success" or any(len(values) > 1 for values in stages.values()):
+        return False
+    values = {name: rows[0] if rows else None for name, rows in stages.items()}
+    if not all(values[name] == "success" for name in BRAND_STEPS[1:]):
+        return False
+    legacy = values[BRAND_STEPS[0]]
+    production = [values[name] for name in BRAND_PRODUCTION_BUILD_STEPS]
+    return ((legacy == "success" and all(value in {None, "skipped"} for value in production))
+            or (legacy in {None, "skipped"} and all(value == "success" for value in production)))
+
+
 def production_run(key, run):
     if run.get("branch") != "main" or run.get("workflow_id") != CONFIG[key]["workflow"] or run.get("event") not in {"schedule", "workflow_dispatch"}:
         return False
@@ -411,7 +428,7 @@ def assess(key, evidence, now):
         result["details"].append("出力先シートの実値はこの試作では直接照合していません")
         return result
     if key == "branded" and latest["conclusion"] == "success":
-        if all(step(latest, name) == "success" for name in BRAND_STEPS):
+        if branded_publication_verified(latest):
             result.update(state="recovered" if historical_failure else "healthy", condition="publication_verified", title="公開と配信内容の検証まで完了しています",
                           impact="今回の失敗への追加対応は不要です", done="データ読取・公開・配信内容の一致検証が成功", next_action="次回の定期更新で結果を確認する")
             result["details"].append("後から成功した照合専用の試験実行は、公開成功の根拠に使っていません")
