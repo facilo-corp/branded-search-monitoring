@@ -139,9 +139,31 @@ def main():
     args = parser.parse_args()
     try:
         return run(args)
-    except Exception:
-        # Preserve the failure as a failed Actions run; don't emit raw exceptions.
-        print(json.dumps({"status": "monitor_failed", "reason": "monitor_requires_review_no_automatic_retry"}))
+    except Exception as exc:
+        # Fixed descriptions only: never print URLs, API bodies or exception
+        # text unless it is a reviewed, non-sensitive code.
+        explanations = {
+            "monitor_lock_requires_review": ("前回の監視処理の終了を確認できず、監視を停止しています", "前回実行の終了と通知の送信履歴を照合してから復旧する"),
+            "monitor_delivery_requires_review": ("前回のSlack送信結果が未確定のため、監視を停止しています", "送信先の受信記録を照合する。結果不明の通知は再送しない"),
+            "monitor_previous_run_unverified": ("前回実行の識別情報が一致しないため、監視を停止しています", "実行履歴と処理中の記録を照合する"),
+            "state_write_unconfirmed": ("監視記録の保存結果を確認できません", "GitHubの保存履歴を照合する。通知の送信は繰り返さない"),
+            "state_readback_unconfirmed": ("監視記録の読み戻しが一致しません", "保存された版と実行履歴を照合する"),
+            "state_changed_concurrently": ("監視記録が他の処理で変更されたため停止しています", "同時実行と変更履歴を確認する"),
+            "state_api_unavailable": ("GitHubの監視記録に接続できません", "GitHubの稼働状況とアクセス権を確認する"),
+            "monitor_code_not_approved": ("監視コードが承認済みの版と一致しません", "変更差分を確認して承認対象の版を指定する"),
+        }
+        code = str(exc) if str(exc) in explanations else "monitor_requires_review_no_automatic_retry"
+        reason, action = explanations.get(code, ("監視処理が停止しました。原因の追加確認が必要です", "実行履歴を調査する。自動再送はしない"))
+        failure = {"status": "monitor_stopped", "reason": code, "target": args.target,
+                   "cause": reason, "next_action": action, "business_recovery_verified": False}
+        output = Path(args.output)
+        output.mkdir(parents=True, exist_ok=True)
+        m.write_json(output / "failure.json", failure)
+        summary_path = os.getenv("GITHUB_STEP_SUMMARY")
+        if summary_path:
+            with open(summary_path, "a", encoding="utf-8") as stream:
+                stream.write(f"\n### 監視停止・要対応\n\n{reason}。\n\n対応：{action}。\n\n業務の復旧は未確認です。\n")
+        print(json.dumps(failure, ensure_ascii=False))
         return 1
 
 

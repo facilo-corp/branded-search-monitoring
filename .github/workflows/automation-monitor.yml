@@ -99,5 +99,6 @@ jobs:
             monitor-result/report.json
             monitor-result/evidence.json
             monitor-result/exact-approval-unapproved.json
+            monitor-result/failure.json
           retention-days: 14
           if-no-files-found: ignore

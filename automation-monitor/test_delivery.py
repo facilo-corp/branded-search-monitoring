@@ -183,9 +183,12 @@ class DeliverySafety(unittest.TestCase):
 
     def test_unknown_write_response_uses_readback_not_retry(self):
         doc=planned();calls=[];store=GitStore('fake')
+        import hashlib
+        raw=json.dumps(doc,ensure_ascii=False,sort_keys=True).encode()
+        expected=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
         def req(method,suffix,body=None):calls.append(method);raise TimeoutError()
-        with patch.object(store,'request',side_effect=req),patch.object(store,'read',return_value=('new',doc)):
-            self.assertEqual(store.write('old',doc),'new')
+        with patch.object(store,'request',side_effect=req),patch.object(store,'read',return_value=(expected,doc)):
+            self.assertEqual(store.write('old',doc),expected)
         self.assertEqual(calls,['PUT'])
 
     def test_recurring_mode_requires_specific_code_and_exception(self):

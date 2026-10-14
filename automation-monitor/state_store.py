@@ -2,7 +2,11 @@
 from contextlib import contextmanager
 from copy import deepcopy
 import base64
+import hashlib
 import json
+import os
+import re
+import time
 import uuid
 
 from delivery import initial_state, validate, validate_target, need
@@ -11,6 +15,14 @@ import monitor as m
 REPOSITORY = "facilo-corp/facilo-marketing-webinar"
 BRANCH = "automation-monitor-state"
 FILE = "alerts.json"
+READBACK_DELAYS = (0, 1, 2, 4)
+
+
+def execution_owner():
+    run, attempt = os.getenv("GITHUB_RUN_ID", ""), os.getenv("GITHUB_RUN_ATTEMPT", "")
+    if re.fullmatch(r"[1-9]\d*", run) and re.fullmatch(r"[1-9]\d*", attempt):
+        return f"run:{run}:{attempt}:{uuid.uuid4().hex}"
+    return uuid.uuid4().hex
 
 
 class GitStore:
@@ -46,16 +58,56 @@ class GitStore:
         validate(doc)
         if self.target:
             validate_target(doc, self.target)
+        raw = json.dumps(doc, ensure_ascii=False, sort_keys=True).encode()
+        expected_sha = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
         payload = {"message": "Persist marketing alert monitor state", "branch": BRANCH, "sha": previous_sha,
-                   "content": base64.b64encode(json.dumps(doc, ensure_ascii=False, sort_keys=True).encode()).decode()}
+                   "content": base64.b64encode(raw).decode()}
         # One attempt only. Lost responses are reconciled by reading, never by PUT retry.
         try:
             self.request("PUT", f"contents/{FILE}", payload)
         except Exception:
             pass
-        sha, verified = self.read()
-        need(sha != previous_sha and verified == doc, "state_write_unconfirmed")
-        return sha
+        # Retry only GET, and only an old version or unavailable read. Never
+        # accept another writer's revision, nor submit the PUT a second time.
+        for delay in READBACK_DELAYS:
+            if delay:
+                time.sleep(delay)
+            try:
+                sha, verified = self.read()
+            except ValueError as exc:
+                if str(exc) == "state_api_unavailable":
+                    continue
+                raise
+            if sha == expected_sha and verified == doc:
+                return sha
+            need(sha == previous_sha, "state_changed_concurrently")
+        raise ValueError("state_write_unconfirmed")
+
+    def confirm(self, expected_sha, expected_doc, previous_sha):
+        for delay in READBACK_DELAYS:
+            if delay:
+                time.sleep(delay)
+            sha, doc = self.read()
+            if sha == expected_sha and doc == expected_doc:
+                return sha, doc
+            need(sha == previous_sha, "state_changed_concurrently")
+        raise ValueError("state_readback_unconfirmed")
+
+    def previous_owner_finished(self, owner):
+        match = re.fullmatch(r"run:([1-9]\d*):([1-9]\d*):[0-9a-f]{32}", owner)
+        if not match:
+            return False  # Legacy UUIDs require an explicit reviewed recovery.
+        run_id, attempt = match.group(1), int(match.group(2))
+        if run_id == os.getenv("GITHUB_RUN_ID"):
+            return False
+        run = self.request("GET", f"actions/runs/{run_id}")
+        exact = self.request("GET", f"actions/runs/{run_id}/attempts/{attempt}")
+        for item in (run, exact):
+            need(str(item.get("id")) == run_id and item.get("path") == ".github/workflows/automation-monitor.yml"
+                 and item.get("head_branch") == "main" and item.get("event") in {"schedule", "workflow_dispatch"},
+                 "monitor_previous_run_unverified")
+        need(exact.get("run_attempt") == attempt, "monitor_previous_run_unverified")
+        return run.get("status") == exact.get("status") == "completed"
 
 
 class MemoryStore:
@@ -77,7 +129,7 @@ class MemoryStore:
 class Journal:
     def __init__(self, store, owner=None):
         self.store = store
-        self.owner = owner or uuid.uuid4().hex
+        self.owner = owner or execution_owner()
         self.sha, self.state = None, None
         self.uncertain = False
 
@@ -100,7 +152,10 @@ class Journal:
         doc["operation_id"] = uuid.uuid4().hex
         try:
             next_sha = self.store.write(self.sha, doc)
-            check_sha, check = self.store.read()
+            if isinstance(self.store, GitStore):
+                check_sha, check = self.store.confirm(next_sha, doc, self.sha)
+            else:
+                check_sha, check = self.store.read()
             need(check_sha == next_sha and check == doc, "state_readback_unconfirmed")
         except Exception:
             self.uncertain = True
@@ -110,7 +165,13 @@ class Journal:
     @contextmanager
     def exclusive(self):
         self.sha, self.state = self.store.read()
-        need(self.state["owner"] is None, "monitor_lock_requires_review")
+        if self.state["owner"] is not None:
+            # There is nothing to resend or infer when every delivery already
+            # has a receipt (or was never sent). Unknown sends remain held.
+            need(not any(r["status"] in {"sending", "needs_review"} for r in self.state["outbox"].values()),
+                 "monitor_delivery_requires_review")
+            need(isinstance(self.store, GitStore) and self.store.previous_owner_finished(self.state["owner"]),
+                 "monitor_lock_requires_review")
         locked = deepcopy(self.state)
         locked["owner"] = self.owner
         self.save(locked)
