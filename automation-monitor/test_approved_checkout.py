@@ -57,6 +57,22 @@ class ApprovedCheckout(unittest.TestCase):
         self.assertFalse(self.check('b'*40))
         self.assertFalse(self.check(self.base,'not-a-sha'))
 
+    def test_uncommitted_or_untracked_monitor_code_is_not_approved(self):
+        Path('automation-monitor/runtime.py').write_text('dirty implementation\n')
+        self.assertFalse(self.check(self.base))
+        self.git('reset', '--hard', self.base)
+        Path('automation-monitor/receipts.py').write_text('untracked implementation\n')
+        self.assertFalse(self.check(self.base))
+
+    def test_receipt_source_requires_approved_ancestor_with_identical_monitor(self):
+        Path('site/index.html').write_text('next weekly publication\n')
+        head = self.commit()
+        with patch.dict(os.environ, {'APPROVED_MONITOR_SHA': self.base}):
+            self.assertTrue(runtime.approved_source(self.base))
+            self.assertTrue(runtime.approved_source(head))
+            Path('automation-monitor/runtime.py').write_text('changed monitor\n')
+            self.assertFalse(runtime.approved_source(self.commit()))
+
 
 if __name__ == '__main__':
     unittest.main()

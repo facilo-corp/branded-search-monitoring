@@ -11,7 +11,34 @@ import sys
 import monitor as m
 import evidence as verification
 import delivery as d
+import receipts
 from state_store import GitStore, MemoryStore, Journal
+
+MONITOR_PATHS = ("automation-monitor/", ".github/workflows/automation-monitor.yml", ".gitattributes")
+
+
+def approved_source(head):
+    """Previous run must contain the same reviewed monitor, not just claim a hash."""
+    base = os.getenv("APPROVED_MONITOR_SHA", "")
+    if not all(isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value) for value in (base, head)):
+        return False
+    try:
+        for command in (("merge-base", "--is-ancestor", base, head),
+                        ("merge-base", "--is-ancestor", head, "HEAD"),
+                        ("diff", "--quiet", base, head, "--", *MONITOR_PATHS)):
+            if subprocess.run(["git", *command], capture_output=True, timeout=30).returncode:
+                return False
+        return True
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def validate_release(authorization, target, now):
+    """Check version binding even when a healthy observation queues no message."""
+    d.need(isinstance(authorization, dict) and authorization.get("repository") == m.CONFIG[target]["repo"]
+           and authorization.get("target") == target, "authorization_target_mismatch")
+    d.need(authorization.get("mode") == "recurring_template_exception"
+           and d.approved({"event": "new"}, authorization, now), "monitor_policy_not_approved")
 
 
 def approved_checkout():
@@ -25,10 +52,10 @@ def approved_checkout():
         actual = git("rev-parse", "HEAD")
         if actual.returncode or actual.stdout.strip() != head:
             return False
-        if git("merge-base", "--is-ancestor", base, head).returncode:
+        if not approved_source(head):
             return False
-        return git("diff", "--quiet", base, head, "--", "automation-monitor/",
-                   ".github/workflows/automation-monitor.yml", ".gitattributes").returncode == 0
+        dirty = git("status", "--porcelain", "--untracked-files=all", "--", *MONITOR_PATHS)
+        return dirty.returncode == 0 and not dirty.stdout.strip()
     except (OSError, subprocess.TimeoutExpired):
         return False
 
@@ -71,36 +98,34 @@ def run_scoped(args):
     report, _ = m.build_report(snapshot, now=now, target=args.target)
     if not args.replay:
         verification.enrich(report, snapshot)
+    output = Path(args.output)
+    output.mkdir(parents=True, exist_ok=True)
+    report.update(target=args.target, repository=repository, monitor_complete=False,
+                  delivery_phase="not_completed")
+    # Preserve the business observation even if locking, journal writes or
+    # delivery subsequently fail. It is explicitly not an end-to-end success.
+    m.write_json(output / "evidence.json", snapshot)
+    m.write_json(output / "report.json", report)
     if args.persist or args.send:
         d.need(args.persist and os.getenv("MONITOR_ENABLED") == "true", "monitor_persistence_disabled")
         d.need(os.getenv("GITHUB_REPOSITORY") == repository and
                os.getenv("GITHUB_REF") == "refs/heads/main" and
                approved_checkout(),
                "monitor_code_not_approved")
+        if args.send and args.target == "branded":
+            validate_release(authorization, args.target, now)
         store = GitStore(os.getenv("GITHUB_TOKEN", ""), repository=repository, target=args.target)
     else:
         store = MemoryStore()
     if args.test_delivery:
         d.need(args.persist and args.send and authorization and authorization.get("mode") == "exact_messages", "exact_test_approval_required")
-    sent = {"sent": 0, "needs_review": 0, "approval_blocked": 0}
-    with Journal(store).exclusive() as journal:
-        d.validate_target(journal.state, args.target)
-        journal.save(d.plan(journal.state, report, now))
-        if args.test_delivery:
-            journal.save(d.enqueue_test(journal.state, now))
-        if args.ack_key or args.ack_signature:
-            d.need(args.persist and args.ack_key and args.ack_signature, "exact_acknowledgement_required")
-            journal.save(d.acknowledge(journal.state, args.ack_key, args.ack_signature))
-        if args.send:
-            d.need(authorization and authorization.get("approved") is True, "specific_slack_approval_required")
-            sender = d.SlackSender(os.getenv("SLACK_ALERT_BOT_TOKEN", ""))
-            sent = d.dispatch(journal, sender, authorization, now)
-        pending = [r for r in journal.state["outbox"].values() if r["status"] in {"pending", "needs_review"}]
-        state = journal.state
-    state = store.read()[1]
-    output = Path(args.output)
-    output.mkdir(parents=True, exist_ok=True)
+    try:
+        sent, pending, state, recovered = run_journal(args, store, report, authorization, now, output)
+    finally:
+        if isinstance(store, GitStore):
+            m.write_json(output / "state-diagnostics.json", {"events": store.diagnostics})
     report.update(target=args.target, repository=repository,
+        monitor_complete=True, delivery_phase="finished", recovered_receipts=recovered,
         mode="production_monitor" if args.persist else "local_validation_only",
         scheduled=bool(args.persist and os.getenv("GITHUB_EVENT_NAME") == "schedule"), slack_messages_sent=sent["sent"],
         pending_messages=pending, delivery_needs_review=sent["needs_review"], approval_blocked=sent["approval_blocked"],
@@ -124,6 +149,28 @@ def run_scoped(args):
     return 1 if sent["needs_review"] or sent["approval_blocked"] else 0
 
 
+def run_journal(args, store, report, authorization, now, output):
+    sent = {"sent": 0, "needs_review": 0, "approval_blocked": 0}
+    recovery = receipts.Recovery(store, approved_source) if args.persist and args.target == "branded" else None
+    journal = Journal(store)
+    with journal.exclusive(recover=recovery):
+        d.validate_target(journal.state, args.target)
+        receipt_log = receipts.ReceiptLog(output, store.repository, args.target, journal.owner) \
+            if args.send and args.target == "branded" else None
+        journal.save(d.plan(journal.state, report, now))
+        if args.test_delivery:
+            journal.save(d.enqueue_test(journal.state, now))
+        if args.ack_key or args.ack_signature:
+            d.need(args.persist and args.ack_key and args.ack_signature, "exact_acknowledgement_required")
+            journal.save(d.acknowledge(journal.state, args.ack_key, args.ack_signature))
+        if args.send:
+            d.need(authorization and authorization.get("approved") is True, "specific_slack_approval_required")
+            sender = d.SlackSender(os.getenv("SLACK_ALERT_BOT_TOKEN", ""))
+            sent = d.dispatch(journal, sender, authorization, now, receipt_log=receipt_log)
+        pending = [r for r in journal.state["outbox"].values() if r["status"] in {"pending", "needs_review"}]
+    return sent, pending, journal.state, recovery.recovered if recovery else []
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", choices=list(m.CONFIG), required=True)
@@ -136,8 +183,17 @@ def main():
     parser.add_argument("--test-delivery", action="store_true")
     parser.add_argument("--ack-key", choices=list(m.CONFIG))
     parser.add_argument("--ack-signature")
+    parser.add_argument("--check-release", action="store_true",
+                        help="Read-only gate: verify checkout and authorization before deployment")
     args = parser.parse_args()
     try:
+        if args.check_release:
+            d.need(args.authorization and not args.persist and not args.send, "release_check_read_only")
+            authorization = json.loads(Path(args.authorization).read_text(encoding="utf-8"))
+            validate_release(authorization, args.target, datetime.now(timezone.utc))
+            d.need(approved_checkout(), "monitor_code_not_approved")
+            print(json.dumps({"release_check": "passed", "target": args.target, "code_sha256": d.code_fingerprint()}))
+            return 0
         return run(args)
     except Exception as exc:
         # Fixed descriptions only: never print URLs, API bodies or exception
@@ -151,6 +207,9 @@ def main():
             "state_changed_concurrently": ("監視記録が他の処理で変更されたため停止しています", "同時実行と変更履歴を確認する"),
             "state_api_unavailable": ("GitHubの監視記録に接続できません", "GitHubの稼働状況とアクセス権を確認する"),
             "monitor_code_not_approved": ("監視コードが承認済みの版と一致しません", "変更差分を確認して承認対象の版を指定する"),
+            "monitor_policy_not_approved": ("通知の承認済み版情報が実装と一致しません", "反映前にコードと通知の版情報を同期して確認する"),
+            "monitor_receipt_requires_review": ("前回の送信記録を自動照合できません", "受信番号と実行記録を確認する。結果不明の通知は再送しない"),
+            "receipt_record_unconfirmed": ("Slackの受信番号を別記録へ保存できません", "受信記録と台帳を照合する。通知は再送しない"),
         }
         code = str(exc) if str(exc) in explanations else "monitor_requires_review_no_automatic_retry"
         reason, action = explanations.get(code, ("監視処理が停止しました。原因の追加確認が必要です", "実行履歴を調査する。自動再送はしない"))

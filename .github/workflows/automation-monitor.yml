@@ -90,6 +90,14 @@ jobs:
             fi
           fi
           python automation-monitor/runtime.py "${args[@]}"
+      - name: Preserve confirmed Slack receipts independently
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: automation-monitor-receipts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: monitor-result/delivery-receipts.json
+          retention-days: 14
+          if-no-files-found: ignore
       - name: Preserve sanitized observation and unsent candidates
         if: always()
         uses: actions/upload-artifact@v4
@@ -100,5 +108,6 @@ jobs:
             monitor-result/evidence.json
             monitor-result/exact-approval-unapproved.json
             monitor-result/failure.json
+            monitor-result/state-diagnostics.json
           retention-days: 14
           if-no-files-found: ignore

@@ -36,6 +36,18 @@ class GitStore:
         self.token = token
         self.repository = repository
         self.target = target
+        self.diagnostics = []
+        self.write_anchor = None
+
+    def note(self, stage, result, http_status=None):
+        # A bounded allowlist: no URL, payload, headers or exception text.
+        if not hasattr(self, "diagnostics"):
+            self.diagnostics = []
+        item = {"stage": stage, "result": result}
+        if type(http_status) is int:
+            item["http_status"] = http_status
+        self.diagnostics.append(item)
+        self.diagnostics = self.diagnostics[-32:]
 
     def request(self, method, suffix, body=None):
         import requests
@@ -43,16 +55,37 @@ class GitStore:
             response = requests.request(method, "https://api.github.com/repos/" + self.repository + "/" + suffix,
                 headers={"Authorization": "Bearer " + self.token, "Accept": "application/vnd.github+json",
                          "X-GitHub-Api-Version": "2022-11-28"}, json=body, timeout=25, allow_redirects=False)
+            self.note("github_" + method.lower(), "response", response.status_code)
             need(response.status_code in {200, 201}, "state_api_unavailable")
             return response.json()
+        except requests.Timeout:
+            self.note("github_" + method.lower(), "timeout")
+            raise ValueError("state_api_unavailable") from None
         except Exception:
+            self.note("github_" + method.lower(), "unavailable")
             raise ValueError("state_api_unavailable") from None
 
-    def read(self):
-        value = self.request("GET", f"contents/{FILE}?ref={BRANCH}")
+    def read(self, ref=BRANCH):
+        need(ref == BRANCH or re.fullmatch(r"[0-9a-f]{40}", ref), "state_ref_invalid")
+        value = self.request("GET", f"contents/{FILE}?ref={ref}")
         need(value.get("encoding") == "base64" and value.get("size", 1_000_000) < 900_000, "state_content_invalid")
         doc = json.loads(base64.b64decode(value["content"]))
         return value["sha"], validate_target(doc, self.target) if self.target else validate(doc)
+
+    def anchored_read(self, expected_sha, expected_doc, previous_sha):
+        """Resolve a stale Contents response through the immutable branch commit."""
+        if not getattr(self, "write_anchor", None):
+            return False
+        ref = self.request("GET", f"git/ref/heads/{BRANCH}")
+        commit = ref.get("object", {}).get("sha", "")
+        need(re.fullmatch(r"[0-9a-f]{40}", commit), "state_content_invalid")
+        sha, doc = self.read(commit)
+        if sha == expected_sha and doc == expected_doc:
+            self.note("readback", "confirmed_at_branch_commit")
+            return True
+        need(sha == previous_sha, "state_changed_concurrently")
+        self.note("readback", "old_branch_commit")
+        return False
 
     def write(self, previous_sha, doc):
         validate(doc)
@@ -63,10 +96,15 @@ class GitStore:
         payload = {"message": "Persist marketing alert monitor state", "branch": BRANCH, "sha": previous_sha,
                    "content": base64.b64encode(raw).decode()}
         # One attempt only. Lost responses are reconciled by reading, never by PUT retry.
+        self.write_anchor = None
         try:
-            self.request("PUT", f"contents/{FILE}", payload)
+            response = self.request("PUT", f"contents/{FILE}", payload)
+            commit = response.get("commit", {}).get("sha", "")
+            if response.get("content", {}).get("sha") == expected_sha and re.fullmatch(r"[0-9a-f]{40}", commit):
+                self.write_anchor = commit
+            self.note("write", "response_received")
         except Exception:
-            pass
+            self.note("write", "response_unconfirmed")
         # Retry only GET, and only an old version or unavailable read. Never
         # accept another writer's revision, nor submit the PUT a second time.
         for delay in READBACK_DELAYS:
@@ -79,18 +117,38 @@ class GitStore:
                     continue
                 raise
             if sha == expected_sha and verified == doc:
+                self.note("readback", "confirmed")
                 return sha
+            try:
+                if self.anchored_read(expected_sha, doc, previous_sha):
+                    return expected_sha
+            except ValueError as exc:
+                if str(exc) == "state_api_unavailable":
+                    self.note("readback", "anchor_unavailable")
+                    continue
+                raise
             need(sha == previous_sha, "state_changed_concurrently")
+            self.note("readback", "old_content")
+        self.note("readback", "exhausted")
         raise ValueError("state_write_unconfirmed")
 
     def confirm(self, expected_sha, expected_doc, previous_sha):
         for delay in READBACK_DELAYS:
             if delay:
                 time.sleep(delay)
-            sha, doc = self.read()
-            if sha == expected_sha and doc == expected_doc:
-                return sha, doc
+            try:
+                sha, doc = self.read()
+                if sha == expected_sha and doc == expected_doc:
+                    return sha, doc
+                if self.anchored_read(expected_sha, expected_doc, previous_sha):
+                    return expected_sha, expected_doc
+            except ValueError as exc:
+                if str(exc) == "state_api_unavailable":
+                    self.note("confirm", "read_unavailable")
+                    continue
+                raise
             need(sha == previous_sha, "state_changed_concurrently")
+        self.note("confirm", "exhausted")
         raise ValueError("state_readback_unconfirmed")
 
     def previous_owner_finished(self, owner):
@@ -135,7 +193,19 @@ class Journal:
 
     def save(self, doc):
         need(not self.uncertain, "state_uncertain")
+        try:
+            self._save(doc)
+        except Exception:
+            # Even a pre-write read/CAS failure must retain the owner: a Slack
+            # acknowledgement may already exist when this save is attempted.
+            self.uncertain = True
+            raise
+
+    def _save(self, doc):
         sha, fresh = self.store.read()
+        if (sha != self.sha or fresh != self.state) and isinstance(self.store, GitStore):
+            if self.store.anchored_read(self.sha, self.state, sha):
+                sha, fresh = self.sha, self.state
         need(sha == self.sha and fresh == self.state, "state_changed_concurrently")
         need(set(self.state["outbox"]) <= set(doc["outbox"]), "delivery_history_cannot_be_deleted")
         for eid, old in self.state["outbox"].items():
@@ -163,9 +233,13 @@ class Journal:
         self.sha, self.state = next_sha, doc
 
     @contextmanager
-    def exclusive(self):
+    def exclusive(self, recover=None):
         self.sha, self.state = self.store.read()
         if self.state["owner"] is not None:
+            if recover is not None and any(r["status"] in {"sending", "needs_review"} for r in self.state["outbox"].values()):
+                need(isinstance(self.store, GitStore) and self.store.previous_owner_finished(self.state["owner"]),
+                     "monitor_lock_requires_review")
+                self.save(recover(self.sha, deepcopy(self.state)))
             # There is nothing to resend or infer when every delivery already
             # has a receipt (or was never sent). Unknown sends remain held.
             need(not any(r["status"] in {"sending", "needs_review"} for r in self.state["outbox"].values()),

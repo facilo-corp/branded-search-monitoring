@@ -70,6 +70,49 @@ class ReadbackTests(unittest.TestCase):
         with patch.object(GitStore,'request',side_effect=[payload(self.old),payload(self.new)]),patch('state_store.time.sleep'):
             self.assertEqual(GitStore('fixture').confirm(payload(self.new)['sha'],self.new,self.previous)[1],self.new)
 
+    def test_successful_put_uses_immutable_branch_commit_when_contents_are_stale(self):
+        expected = payload(self.new)['sha']
+        commit = 'a' * 40
+        responses = [{'content': {'sha': expected}, 'commit': {'sha': commit}},
+                     payload(self.old), {'object': {'sha': commit}}, payload(self.new)]
+        with patch.object(GitStore, 'request', side_effect=responses) as req:
+            store = GitStore('fixture')
+            self.assertEqual(store.write(self.previous, self.new), expected)
+        self.assertEqual([c.args[0] for c in req.call_args_list], ['PUT', 'GET', 'GET', 'GET'])
+        self.assertTrue(req.call_args_list[-1].args[1].endswith('ref=' + commit))
+        self.assertIn({'stage': 'readback', 'result': 'confirmed_at_branch_commit'}, store.diagnostics)
+
+    def test_anchor_cannot_hide_genuine_external_change(self):
+        expected = payload(self.new)['sha']
+        other = {**self.new, 'operation_id': 'external-writer'}
+        responses = [{'content': {'sha': expected}, 'commit': {'sha': 'a' * 40}},
+                     payload(self.old), {'object': {'sha': 'b' * 40}}, payload(other)]
+        with patch.object(GitStore, 'request', side_effect=responses) as req:
+            with self.assertRaisesRegex(ValueError, 'state_changed_concurrently'):
+                GitStore('fixture').write(self.previous, self.new)
+        self.assertEqual(sum(c.args[0] == 'PUT' for c in req.call_args_list), 1)
+
+    def test_confirmation_get_failure_is_bounded_and_does_not_write(self):
+        with patch.object(GitStore, 'request', side_effect=[ValueError('state_api_unavailable'), payload(self.new)]) as req, \
+             patch('state_store.time.sleep'):
+            result = GitStore('fixture').confirm(payload(self.new)['sha'], self.new, self.previous)
+        self.assertEqual(result[1], self.new)
+        self.assertEqual([c.args[0] for c in req.call_args_list], ['GET', 'GET'])
+
+    def test_journal_preflight_uses_branch_commit_instead_of_stale_contents(self):
+        store = GitStore('fixture')
+        store.write_anchor = 'a' * 40
+        journal = Journal(store)
+        journal.sha, journal.state = payload(self.new)['sha'], self.new
+        newer = {**self.new, 'owner': journal.owner}
+        with patch.object(store, 'read', side_effect=[(self.previous, self.old), (journal.sha, self.new)]), \
+             patch.object(store, 'request', return_value={'object': {'sha': 'a' * 40}}), \
+             patch.object(store, 'write', return_value='next') as write, \
+             patch.object(store, 'confirm', side_effect=lambda sha, doc, prev: (sha, doc)):
+            journal.save(newer)
+        self.assertEqual(write.call_count, 1)
+        self.assertEqual(write.call_args.args[0], payload(self.new)['sha'])
+
 
 class ResumableStore(GitStore):
     def __init__(self,doc,finished=True):
@@ -134,6 +177,23 @@ class OwnerRecoveryTests(unittest.TestCase):
 
 
 class DiagnosticTests(unittest.TestCase):
+    def test_http_status_and_timeout_are_safe_without_body_or_secret(self):
+        from unittest.mock import Mock
+        import requests
+        for response in (Mock(status_code=503), Mock(status_code=403)):
+            response.json.side_effect = ValueError('SECRET private@example.com')
+            store = GitStore('SECRET-token')
+            with patch('requests.request', return_value=response), self.assertRaises(ValueError):
+                store.request('PUT', 'contents/alerts.json', {'content': 'SECRET-body'})
+            data = json.dumps(store.diagnostics)
+            self.assertNotIn('SECRET', data)
+            self.assertNotIn('private@', data)
+            self.assertIn(str(response.status_code), data)
+        store = GitStore('SECRET-token')
+        with patch('requests.request', side_effect=requests.Timeout('SECRET url')), self.assertRaises(ValueError):
+            store.request('PUT', 'contents/alerts.json')
+        self.assertEqual(store.diagnostics, [{'stage': 'github_put', 'result': 'timeout'}])
+
     def test_known_diagnostic_and_unknown_exception_are_sanitized(self):
         for message,expected in [('monitor_lock_requires_review','monitor_lock_requires_review'),('private@example.com SECRET','monitor_requires_review_no_automatic_retry')]:
             with tempfile.TemporaryDirectory() as tmp:

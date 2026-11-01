@@ -165,7 +165,7 @@ def enqueue_test(state, now):
 def code_fingerprint():
     here = Path(__file__).parent
     return digest({p: hashlib.sha256((here/p).read_bytes()).hexdigest()
-                   for p in ("monitor.py", "evidence.py", "delivery.py", "state_store.py", "runtime.py")})
+                   for p in ("monitor.py", "evidence.py", "delivery.py", "state_store.py", "runtime.py", "receipts.py")})
 
 
 def approved(row, authorization, now):
@@ -187,7 +187,7 @@ def approved(row, authorization, now):
     return False
 
 
-def dispatch(journal, sender, authorization, now):
+def dispatch(journal, sender, authorization, now, receipt_log=None):
     sent = 0
     blocked = 0
     for eid in list(journal.state["outbox"]):
@@ -220,6 +220,14 @@ def dispatch(journal, sender, authorization, now):
             journal.save(draft)
             # Stop this batch rather than sending more after a transport fault.
             return {"sent": sent, "needs_review": 1, "approval_blocked": blocked}
+        if receipt_log is not None:
+            try:
+                receipt_log.record(journal, eid, receipt, now)
+            except Exception:
+                # Keep the owner and sending intent. Do not lose the only link
+                # to this attempt by releasing ownership after a local I/O fault.
+                journal.uncertain = True
+                raise ValueError("receipt_record_unconfirmed") from None
         draft = deepcopy(journal.state)
         draft["outbox"][eid].update(status="sent", receipt=receipt, sent_at=m.iso(now))
         if row["event"] != "test":
