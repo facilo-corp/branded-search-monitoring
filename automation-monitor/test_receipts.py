@@ -55,6 +55,13 @@ class Store(GitStore):
     def read(self, ref=None):
         return payload(self.doc)["sha"], deepcopy(self.doc)
 
+    def current(self):
+        return 'f' * 40, *self.read()
+
+    def confirm(self, expected, doc, previous):
+        assert self.read() == (expected, doc)
+        return self.read()
+
     def write(self, previous, doc):
         if self.fail_sent and any(row["status"] == "sent" and self.doc["outbox"].get(row["id"], {}).get("status") != "sent"
                                   for row in doc["outbox"].values()):

@@ -1,5 +1,6 @@
 """Cloud-ready entrypoint. Default is read-only collection + local preview."""
 import argparse
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
 import os
@@ -12,9 +13,21 @@ import monitor as m
 import evidence as verification
 import delivery as d
 import receipts
-from state_store import GitStore, MemoryStore, Journal
+from state_store import GitStore, MemoryStore, Journal, StateStoreError
 
 MONITOR_PATHS = ("automation-monitor/", ".github/workflows/automation-monitor.yml", ".gitattributes")
+
+
+@contextmanager
+def record_store_diagnostics(store, destination):
+    """Persist fixed, sanitized transport facts even if the journal cannot be saved."""
+    try:
+        yield
+    finally:
+        if isinstance(store, GitStore):
+            output = Path(destination)
+            output.mkdir(parents=True, exist_ok=True)
+            m.write_json(output / "state-diagnostics.json", {"events": store.diagnostics})
 
 
 def approved_source(head):
@@ -119,11 +132,8 @@ def run_scoped(args):
         store = MemoryStore()
     if args.test_delivery:
         d.need(args.persist and args.send and authorization and authorization.get("mode") == "exact_messages", "exact_test_approval_required")
-    try:
+    with record_store_diagnostics(store, output):
         sent, pending, state, recovered = run_journal(args, store, report, authorization, now, output)
-    finally:
-        if isinstance(store, GitStore):
-            m.write_json(output / "state-diagnostics.json", {"events": store.diagnostics})
     report.update(target=args.target, repository=repository,
         monitor_complete=True, delivery_phase="finished", recovered_receipts=recovered,
         mode="production_monitor" if args.persist else "local_validation_only",
@@ -206,6 +216,18 @@ def main():
             "state_readback_unconfirmed": ("監視記録の読み戻しが一致しません", "保存された版と実行履歴を照合する"),
             "state_changed_concurrently": ("監視記録が他の処理で変更されたため停止しています", "同時実行と変更履歴を確認する"),
             "state_api_unavailable": ("GitHubの監視記録に接続できません", "GitHubの稼働状況とアクセス権を確認する"),
+            "state_timeout": ("GitHubの監視記録への接続が時間切れになりました", "保存履歴と診断記録を照合する。通知は再送しない"),
+            "state_connection_error": ("GitHubの監視記録への通信が切断されました", "保存履歴と診断記録を照合する。通知は再送しない"),
+            "state_service_unavailable": ("GitHubから一時的な応答エラーが返りました", "保存履歴と診断記録を照合する。通知は再送しない"),
+            "state_rate_limited": ("GitHubの利用制限により監視記録へのアクセスを停止しました", "GitHubの制限解除を確認する。連続して再実行しない"),
+            "state_access_denied": ("GitHubの監視記録へのアクセスが拒否されました", "実行用認証の権限を確認する"),
+            "state_not_found": ("GitHubの監視記録または保存先を参照できません", "保存先と認証の参照権限を確認する。記録を初期化しない"),
+            "state_conflict": ("監視記録の保存が競合しました", "保存履歴を照合する。通知は再送しない"),
+            "state_request_rejected": ("GitHubが監視記録への要求を受け付けませんでした", "診断記録と保存先設定を確認する"),
+            "state_response_invalid": ("GitHubの監視記録の応答を正しく読み取れませんでした", "保存履歴と応答の診断記録を確認する"),
+            "state_retry_budget_exceeded": ("監視記録の再確認が制限時間に達しました", "保存履歴と診断記録を照合する。通知は再送しない"),
+            "state_history_invalid": ("監視記録の保存履歴を検証できませんでした", "保存先の履歴を確認する。通知は再送しない"),
+            "state_content_hash_mismatch": ("監視記録の内容と版情報が一致しません", "保存先の履歴を確認する。通知は再送しない"),
             "monitor_code_not_approved": ("監視コードが承認済みの版と一致しません", "変更差分を確認して承認対象の版を指定する"),
             "monitor_policy_not_approved": ("通知の承認済み版情報が実装と一致しません", "反映前にコードと通知の版情報を同期して確認する"),
             "monitor_receipt_requires_review": ("前回の送信記録を自動照合できません", "受信番号と実行記録を確認する。結果不明の通知は再送しない"),
@@ -217,6 +239,8 @@ def main():
                    "cause": reason, "next_action": action, "business_recovery_verified": False}
         output = Path(args.output)
         output.mkdir(parents=True, exist_ok=True)
+        if isinstance(exc, StateStoreError):
+            failure["diagnostic"] = exc.diagnostic
         m.write_json(output / "failure.json", failure)
         summary_path = os.getenv("GITHUB_STEP_SUMMARY")
         if summary_path:

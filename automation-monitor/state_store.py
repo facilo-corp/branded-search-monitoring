@@ -15,7 +15,24 @@ import monitor as m
 REPOSITORY = "facilo-corp/facilo-marketing-webinar"
 BRANCH = "automation-monitor-state"
 FILE = "alerts.json"
-READBACK_DELAYS = (0, 1, 2, 4)
+READBACK_DELAYS = (0, 2, 5, 10)
+GET_DELAYS = (0, 1, 3)
+TRANSIENT = {"state_timeout", "state_connection_error", "state_service_unavailable"}
+API_CODES = TRANSIENT | {"state_rate_limited", "state_access_denied", "state_not_found",
+    "state_conflict", "state_request_rejected", "state_response_invalid", "state_retry_budget_exceeded"}
+
+
+class StateStoreError(ValueError):
+    """Only fixed codes and numeric status may leave the state transport."""
+    def __init__(self, code, *, method=None, status=None):
+        if code not in API_CODES | {"state_write_unconfirmed", "state_readback_unconfirmed"}:
+            code = "state_request_rejected"
+        super().__init__(code)
+        self.diagnostic = {"code": code}
+        if method in {"GET", "PUT"}:
+            self.diagnostic["method"] = method
+        if type(status) is int and 100 <= status <= 599:
+            self.diagnostic["http_status"] = status
 
 
 def execution_owner():
@@ -37,55 +54,138 @@ class GitStore:
         self.repository = repository
         self.target = target
         self.diagnostics = []
-        self.write_anchor = None
+        self.phase = "read"
+        self.deadline = None
 
-    def note(self, stage, result, http_status=None):
-        # A bounded allowlist: no URL, payload, headers or exception text.
-        if not hasattr(self, "diagnostics"):
-            self.diagnostics = []
-        item = {"stage": stage, "result": result}
-        if type(http_status) is int:
-            item["http_status"] = http_status
-        self.diagnostics.append(item)
-        self.diagnostics = self.diagnostics[-32:]
+    def note(self, event, **values):
+        # Never accept response bodies, URLs, headers, tokens or exception text.
+        entry = {"phase": self.phase, "event": event}
+        entry.update({k: v for k, v in values.items()
+                      if k in {"attempt", "http_status", "method", "code", "matched"}})
+        self.diagnostics.append(entry)
+        self.diagnostics[:] = self.diagnostics[-100:]
+
+    @contextmanager
+    def budget(self):
+        prior = self.deadline
+        if prior is None:
+            self.deadline = time.monotonic() + 120
+        try:
+            yield
+        finally:
+            self.deadline = prior
+
+    def remaining(self):
+        remaining = 30 if self.deadline is None else self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise StateStoreError("state_retry_budget_exceeded")
+        return remaining
+
+    def pause(self, delay):
+        if delay >= self.remaining():
+            raise StateStoreError("state_retry_budget_exceeded")
+        if delay:
+            time.sleep(delay)
 
     def request(self, method, suffix, body=None):
         import requests
+        delays = GET_DELAYS if method == "GET" else (0,)
+        with self.budget():
+            for attempt, delay in enumerate(delays, 1):
+                self.pause(delay)
+                try:
+                    seconds = min(10, self.remaining() / 2)
+                    response = requests.request(method, "https://api.github.com/repos/" + self.repository + "/" + suffix,
+                        headers={"Authorization": "Bearer " + self.token, "Accept": "application/vnd.github+json",
+                                 "X-GitHub-Api-Version": "2022-11-28", "Cache-Control": "no-cache"},
+                        json=body, timeout=(min(5, seconds), seconds), allow_redirects=False)
+                    status = response.status_code
+                    if status not in {200, 201}:
+                        headers = response.headers
+                        secondary_limit = False
+                        if status == 403:
+                            try:
+                                error_body = response.json()
+                                message = error_body.get("message", "") if isinstance(error_body, dict) else ""
+                                secondary_limit = isinstance(message, str) and any(
+                                    label in message.lower() for label in ("secondary rate limit", "rate limit exceeded"))
+                            except ValueError:
+                                pass
+                        # Stop this run on rate limits; never retry before GitHub's cooldown.
+                        if status == 429 or (status == 403 and
+                            (headers.get("x-ratelimit-remaining") == "0" or headers.get("retry-after") or secondary_limit)):
+                            code = "state_rate_limited"
+                        elif status in {401, 403}: code = "state_access_denied"
+                        elif status == 404: code = "state_not_found"
+                        elif status == 409: code = "state_conflict"
+                        elif status in {408, 500, 502, 503, 504}: code = "state_service_unavailable"
+                        else: code = "state_request_rejected"
+                        raise StateStoreError(code, method=method, status=status)
+                    try:
+                        value = response.json()
+                    except ValueError:
+                        raise StateStoreError("state_response_invalid", method=method) from None
+                    self.note("response_ok", method=method, attempt=attempt, http_status=status)
+                    return value
+                except requests.Timeout:
+                    error = StateStoreError("state_timeout", method=method)
+                except requests.ConnectionError:
+                    error = StateStoreError("state_connection_error", method=method)
+                except requests.RequestException:
+                    error = StateStoreError("state_request_rejected", method=method)
+                except StateStoreError as exc:
+                    error = exc
+                self.note("request_failed", attempt=attempt, **error.diagnostic)
+                if str(error) not in TRANSIENT or attempt == len(delays):
+                    raise error from None
+
+    def decode(self, value):
+        need(isinstance(value, dict), "state_content_invalid")
+        need(value.get("encoding") == "base64" and value.get("size", 1_000_000) < 900_000, "state_content_invalid")
         try:
-            response = requests.request(method, "https://api.github.com/repos/" + self.repository + "/" + suffix,
-                headers={"Authorization": "Bearer " + self.token, "Accept": "application/vnd.github+json",
-                         "X-GitHub-Api-Version": "2022-11-28"}, json=body, timeout=25, allow_redirects=False)
-            self.note("github_" + method.lower(), "response", response.status_code)
-            need(response.status_code in {200, 201}, "state_api_unavailable")
-            return response.json()
-        except requests.Timeout:
-            self.note("github_" + method.lower(), "timeout")
-            raise ValueError("state_api_unavailable") from None
-        except Exception:
-            self.note("github_" + method.lower(), "unavailable")
-            raise ValueError("state_api_unavailable") from None
+            raw = base64.b64decode(value["content"])
+            doc = json.loads(raw)
+        except (KeyError, ValueError, TypeError):
+            raise StateStoreError("state_response_invalid") from None
+        actual_sha = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
+        need(value.get("sha") == actual_sha, "state_content_hash_mismatch")
+        return value["sha"], validate_target(doc, self.target) if self.target else validate(doc)
 
     def read(self, ref=BRANCH):
         need(ref == BRANCH or re.fullmatch(r"[0-9a-f]{40}", ref), "state_ref_invalid")
-        value = self.request("GET", f"contents/{FILE}?ref={ref}")
-        need(value.get("encoding") == "base64" and value.get("size", 1_000_000) < 900_000, "state_content_invalid")
-        doc = json.loads(base64.b64decode(value["content"]))
-        return value["sha"], validate_target(doc, self.target) if self.target else validate(doc)
+        return self.decode(self.request("GET", f"contents/{FILE}?ref={ref}"))
 
-    def anchored_read(self, expected_sha, expected_doc, previous_sha):
-        """Resolve a stale Contents response through the immutable branch commit."""
-        if not getattr(self, "write_anchor", None):
-            return False
-        ref = self.request("GET", f"git/ref/heads/{BRANCH}")
-        commit = ref.get("object", {}).get("sha", "")
-        need(re.fullmatch(r"[0-9a-f]{40}", commit), "state_content_invalid")
-        sha, doc = self.read(commit)
-        if sha == expected_sha and doc == expected_doc:
-            self.note("readback", "confirmed_at_branch_commit")
-            return True
-        need(sha == previous_sha, "state_changed_concurrently")
-        self.note("readback", "old_branch_commit")
-        return False
+    def current(self):
+        """Read the saved commit, pin its contents, then confirm the branch stayed there."""
+        def head():
+            value = self.request("GET", f"git/ref/heads/{BRANCH}")
+            obj = value.get("object", {}) if isinstance(value, dict) else {}
+            need(obj.get("type") == "commit" and isinstance(obj.get("sha"), str)
+                 and re.fullmatch(r"[0-9a-f]{40}", obj["sha"]), "state_history_invalid")
+            return obj["sha"]
+        commit = head()
+        sha, doc = self.decode(self.request("GET", f"contents/{FILE}?ref={commit}"))
+        need(head() == commit, "state_changed_concurrently")
+        return commit, sha, doc
+
+    def reconcile(self, expected_sha, expected_doc, previous_sha, original_commit=None):
+        last = None
+        for attempt, delay in enumerate(READBACK_DELAYS, 1):
+            self.pause(delay)
+            try:
+                commit, sha, doc = self.current()
+            except StateStoreError as exc:
+                if str(exc) in TRANSIENT:
+                    continue
+                raise
+            if sha == expected_sha and doc == expected_doc:
+                self.note("saved_content_confirmed", attempt=attempt, matched=True)
+                return True, commit
+            need(sha == previous_sha, "state_changed_concurrently")
+            need(original_commit is None or commit == original_commit, "state_changed_concurrently")
+            last = commit
+            self.note("previous_content_confirmed", attempt=attempt, matched=False)
+        return False, last
 
     def write(self, previous_sha, doc):
         validate(doc)
@@ -95,61 +195,37 @@ class GitStore:
         expected_sha = hashlib.sha1(b"blob " + str(len(raw)).encode() + b"\0" + raw).hexdigest()
         payload = {"message": "Persist marketing alert monitor state", "branch": BRANCH, "sha": previous_sha,
                    "content": base64.b64encode(raw).decode()}
-        # One attempt only. Lost responses are reconciled by reading, never by PUT retry.
-        self.write_anchor = None
-        try:
-            response = self.request("PUT", f"contents/{FILE}", payload)
-            commit = response.get("commit", {}).get("sha", "")
-            if response.get("content", {}).get("sha") == expected_sha and re.fullmatch(r"[0-9a-f]{40}", commit):
-                self.write_anchor = commit
-            self.note("write", "response_received")
-        except Exception:
-            self.note("write", "response_unconfirmed")
-        # Retry only GET, and only an old version or unavailable read. Never
-        # accept another writer's revision, nor submit the PUT a second time.
-        for delay in READBACK_DELAYS:
-            if delay:
-                time.sleep(delay)
-            try:
-                sha, verified = self.read()
-            except ValueError as exc:
-                if str(exc) == "state_api_unavailable":
-                    continue
-                raise
-            if sha == expected_sha and verified == doc:
-                self.note("readback", "confirmed")
-                return sha
-            try:
-                if self.anchored_read(expected_sha, doc, previous_sha):
-                    return expected_sha
-            except ValueError as exc:
-                if str(exc) == "state_api_unavailable":
-                    self.note("readback", "anchor_unavailable")
-                    continue
-                raise
+        with self.budget():
+            base_commit, sha, _ = self.current()
             need(sha == previous_sha, "state_changed_concurrently")
-            self.note("readback", "old_content")
-        self.note("readback", "exhausted")
-        raise ValueError("state_write_unconfirmed")
+            for attempt in (1, 2):
+                error = None
+                try:
+                    self.request("PUT", f"contents/{FILE}", payload)
+                except StateStoreError as exc:
+                    error = exc
+                    if str(exc) not in TRANSIENT | {"state_conflict", "state_response_invalid"}:
+                        raise
+                confirmed, observed_commit = self.reconcile(expected_sha, doc, previous_sha, base_commit)
+                if confirmed:
+                    return expected_sha
+                # Conditional CAS retry only: a transient PUT error AND the original
+                # commit/content are still present. Reuse the exact operation and old SHA.
+                # An original request arriving late or another writer makes the CAS fail;
+                # read back the intended content, never replay Slack/business operations.
+                if attempt == 1 and error is not None and str(error) in TRANSIENT and observed_commit == base_commit:
+                    self.pause(2)
+                    retry_commit, retry_sha, _ = self.current()
+                    need(retry_commit == base_commit and retry_sha == previous_sha, "state_changed_concurrently")
+                    self.note("conditional_save_retry", attempt=2)
+                    continue
+                raise StateStoreError("state_write_unconfirmed")
 
     def confirm(self, expected_sha, expected_doc, previous_sha):
-        for delay in READBACK_DELAYS:
-            if delay:
-                time.sleep(delay)
-            try:
-                sha, doc = self.read()
-                if sha == expected_sha and doc == expected_doc:
-                    return sha, doc
-                if self.anchored_read(expected_sha, expected_doc, previous_sha):
-                    return expected_sha, expected_doc
-            except ValueError as exc:
-                if str(exc) == "state_api_unavailable":
-                    self.note("confirm", "read_unavailable")
-                    continue
-                raise
-            need(sha == previous_sha, "state_changed_concurrently")
-        self.note("confirm", "exhausted")
-        raise ValueError("state_readback_unconfirmed")
+        with self.budget():
+            if self.reconcile(expected_sha, expected_doc, previous_sha)[0]:
+                return expected_sha, expected_doc
+        raise StateStoreError("state_readback_unconfirmed")
 
     def previous_owner_finished(self, owner):
         match = re.fullmatch(r"run:([1-9]\d*):([1-9]\d*):[0-9a-f]{32}", owner)
@@ -204,8 +280,7 @@ class Journal:
     def _save(self, doc):
         sha, fresh = self.store.read()
         if (sha != self.sha or fresh != self.state) and isinstance(self.store, GitStore):
-            if self.store.anchored_read(self.sha, self.state, sha):
-                sha, fresh = self.sha, self.state
+            _, sha, fresh = self.store.current()
         need(sha == self.sha and fresh == self.state, "state_changed_concurrently")
         need(set(self.state["outbox"]) <= set(doc["outbox"]), "delivery_history_cannot_be_deleted")
         for eid, old in self.state["outbox"].items():
@@ -234,12 +309,16 @@ class Journal:
 
     @contextmanager
     def exclusive(self, recover=None):
+        if isinstance(self.store, GitStore):
+            self.store.phase = "acquire_lock"
         self.sha, self.state = self.store.read()
         if self.state["owner"] is not None:
             if recover is not None and any(r["status"] in {"sending", "needs_review"} for r in self.state["outbox"].values()):
                 need(isinstance(self.store, GitStore) and self.store.previous_owner_finished(self.state["owner"]),
                      "monitor_lock_requires_review")
+                self.store.phase = "recover_receipt"
                 self.save(recover(self.sha, deepcopy(self.state)))
+                self.store.phase = "acquire_lock"
             # There is nothing to resend or infer when every delivery already
             # has a receipt (or was never sent). Unknown sends remain held.
             need(not any(r["status"] in {"sending", "needs_review"} for r in self.state["outbox"].values()),
@@ -250,9 +329,13 @@ class Journal:
         locked["owner"] = self.owner
         self.save(locked)
         try:
+            if isinstance(self.store, GitStore):
+                self.store.phase = "record_observation_or_delivery"
             yield self
         finally:
             if not self.uncertain:
+                if isinstance(self.store, GitStore):
+                    self.store.phase = "release_lock"
                 unlocked = deepcopy(self.state)
                 need(unlocked["owner"] == self.owner, "monitor_lock_lost")
                 unlocked["owner"] = None

@@ -122,7 +122,7 @@ class Recovery:
                      "receipt_run_expired", "receipt_artifact_incomplete", "receipt_artifact_missing",
                      "receipt_artifact_unverified", "receipt_artifact_unavailable", "receipt_proof_invalid",
                      "receipt_proof_missing", "receipt_proof_mismatch", "receipt_time_invalid", "receipt_incident_changed"}
-            self.store.note("receipt_recovery", str(exc) if str(exc) in known else "unverified")
+            self.store.note("receipt_recovery", code=str(exc) if str(exc) in known else "unverified")
             raise ValueError("monitor_receipt_requires_review") from None
 
     def _candidate(self, sha, state):

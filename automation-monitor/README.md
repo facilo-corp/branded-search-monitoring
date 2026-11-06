@@ -44,10 +44,9 @@ still necessary. Run deletion or retention expiry also removes recovery evidence
 `report.json` and `evidence.json` are saved before journal/delivery work.
 `monitor_complete: false` means the business observation is available but the
 monitor did not finish. `state-diagnostics.json` contains bounded, sanitized
-HTTP statuses and reconciliation stages. Failed writes are never retried; only
-reads are retried. A successful write followed by stale Contents responses can
-be checked against the branch's immutable commit. A different current state
-continues to stop processing.
+HTTP statuses and reconciliation stages. The 2026-11-06 review candidate below
+adds bounded, conditional recovery for transient storage failures. A different
+current state continues to stop processing.
 
 Before production deployment, synchronize the recurring authorization's code
 hash and the approved monitor commit as one reviewed release. Use:
@@ -63,3 +62,12 @@ authorization file, GitHub variables, schedules, destinations or message templat
 Do not merge/deploy until this exact candidate has been approved. After approved
 deployment, verify ordinary scheduled executions, the receipt artifact, and
 the journal. Do not manufacture an alert or replay old messages for a live test.
+
+## 2026-11-06 保存復旧の確認版（本番未反映）
+
+- GETの一時エラーは最大3回まで。保存結果はブランチのcommitに固定して内容とhashを照合する。
+- PUT応答が失われても保存済みなら続行。保存失敗が一時的で、元commit・元内容が変わっていないことを再確認できた場合だけ、同じ内容・元SHAで1回再試行する。保存の再確認は1操作120秒以内。
+- 権限拒否、利用制限、記録の不一致、別の処理による変更は自動で保存を繰り返さない。
+- 記録には固定のエラー分類・HTTP番号・停止工程だけを残す。API本文、秘密情報、氏名・メールを含めない。
+- 指名検索固有の送信受領記録・その検証条件・旧通知履歴を保持する。失敗後の証拠照合は通知を再送しない。
+- 外部通信を遮断した試験でHTTP 500、応答紛失、遅れて完了する保存、競合、受領記録の復旧を検証する。本番承認情報は変更せず、次の本人確認後に版の整合をとる。

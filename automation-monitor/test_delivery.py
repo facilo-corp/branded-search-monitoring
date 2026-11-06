@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 import os
 from datetime import timedelta
@@ -7,7 +8,7 @@ from unittest.mock import patch
 
 import delivery as d
 import monitor as m
-from state_store import GitStore, MemoryStore, Journal
+from state_store import GitStore, MemoryStore, Journal, StateStoreError
 from runtime import heartbeat_status
 
 NOW = m.parse_time("2026-10-11T04:00:00Z")
@@ -183,11 +184,11 @@ class DeliverySafety(unittest.TestCase):
 
     def test_unknown_write_response_uses_readback_not_retry(self):
         doc=planned();calls=[];store=GitStore('fake')
-        import hashlib
         raw=json.dumps(doc,ensure_ascii=False,sort_keys=True).encode()
         expected=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
-        def req(method,suffix,body=None):calls.append(method);raise TimeoutError()
-        with patch.object(store,'request',side_effect=req),patch.object(store,'read',return_value=(expected,doc)):
+        def req(method,suffix,body=None):calls.append(method);raise StateStoreError('state_timeout')
+        with patch.object(store,'request',side_effect=req), \
+             patch.object(store,'current',side_effect=[('a'*40,'old',{}),('b'*40,expected,doc)]):
             self.assertEqual(store.write('old',doc),expected)
         self.assertEqual(calls,['PUT'])
 

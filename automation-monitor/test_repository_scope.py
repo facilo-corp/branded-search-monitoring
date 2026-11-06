@@ -1,5 +1,6 @@
 """Isolation/credential tests for the proposed per-repository monitor."""
 import base64
+import hashlib
 import json
 import os
 import tempfile
@@ -117,8 +118,10 @@ class RepositoryIsolation(unittest.TestCase):
     def test_mixed_ledger_is_rejected_on_read(self):
         state = d.initial_state()
         state['workflows']['takken'] = {}
-        payload = {'sha': 'fixture', 'encoding': 'base64', 'size': 200,
-                   'content': base64.b64encode(json.dumps(state).encode()).decode()}
+        raw = json.dumps(state).encode()
+        sha = hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+        payload = {'sha': sha, 'encoding': 'base64', 'size': len(raw),
+                   'content': base64.b64encode(raw).decode()}
         store = GitStore('fixture', repository=m.CONFIG['bizibl']['repo'], target='bizibl')
         with patch.object(store, 'request', return_value=payload):
             with self.assertRaisesRegex(ValueError, 'other_target'):
