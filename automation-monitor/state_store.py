@@ -163,10 +163,18 @@ class GitStore:
             need(obj.get("type") == "commit" and isinstance(obj.get("sha"), str)
                  and re.fullmatch(r"[0-9a-f]{40}", obj["sha"]), "state_history_invalid")
             return obj["sha"]
-        commit = head()
-        sha, doc = self.decode(self.request("GET", f"contents/{FILE}?ref={commit}"))
-        need(head() == commit, "state_changed_concurrently")
-        return commit, sha, doc
+        with self.budget():
+            for attempt, delay in enumerate(GET_DELAYS, 1):
+                self.pause(delay)
+                commit = head()
+                sha, doc = self.decode(self.request("GET", f"contents/{FILE}?ref={commit}"))
+                if head() == commit:
+                    return commit, sha, doc
+                # A ref may briefly alternate around our own successful write.
+                # Re-read only; callers still compare the exact document/blob
+                # and CAS base before accepting a save or issuing another PUT.
+                self.note("branch_head_moved", attempt=attempt, matched=False)
+        raise StateStoreError("state_readback_unconfirmed")
 
     def reconcile(self, expected_sha, expected_doc, previous_sha, original_commit=None):
         last = None
@@ -266,9 +274,11 @@ class Journal:
         self.owner = owner or execution_owner()
         self.sha, self.state = None, None
         self.uncertain = False
+        self._pending_write = None
 
     def save(self, doc):
         need(not self.uncertain, "state_uncertain")
+        self._pending_write = None
         try:
             self._save(doc)
         except Exception:
@@ -295,6 +305,7 @@ class Journal:
         doc = deepcopy(doc)
         doc["revision"] = self.state["revision"]+1
         doc["operation_id"] = uuid.uuid4().hex
+        self._pending_write = deepcopy(doc)
         try:
             next_sha = self.store.write(self.sha, doc)
             if isinstance(self.store, GitStore):
@@ -306,6 +317,70 @@ class Journal:
             self.uncertain = True
             raise
         self.sha, self.state = next_sha, doc
+        self._pending_write = None
+
+    def prepare_delivery(self, eid, attempted_at):
+        """The only place allowed to restore an intent: before any send call.
+
+        This live stack knows that sender.post has not been entered. It must
+        never be used to recover an interrupted process or a returned receipt.
+        A failed restoration retains ownership and unknown results stay held.
+        """
+        need(not self.uncertain and self.state["owner"] == self.owner,
+             "monitor_lock_lost")
+        before = deepcopy(self.state)
+        row = before["outbox"][eid]
+        need(row["status"] == "pending" and row.get("receipt") is None,
+             "delivery_intent_not_pending")
+        draft = deepcopy(before)
+        draft["outbox"][eid].update(status="sending", attempted_at=attempted_at)
+        prior_phase = self.store.phase if isinstance(self.store, GitStore) else None
+        if prior_phase is not None:
+            self.store.phase = "prepare_delivery"
+        try:
+            self.save(draft)
+        except Exception:
+            self.uncertain = True
+            if prior_phase is not None:
+                self.store.note("send_not_started")
+            try:
+                self._restore_unsent_intent(before, self._pending_write)
+            except Exception:
+                # Do not infer non-delivery from a future process's stale state.
+                # No overwrite, replay, or blind retry when exact CAS proof fails.
+                if prior_phase is not None:
+                    self.store.note("unsent_intent_restore_unconfirmed")
+            raise ValueError("monitor_delivery_not_started") from None
+        finally:
+            if prior_phase is not None:
+                self.store.phase = prior_phase
+
+    def _restore_unsent_intent(self, before, attempted):
+        """Seal the proven pre-send state with a new CAS write before unlocking."""
+        if isinstance(self.store, GitStore):
+            self.store.phase = "restore_unsent_intent"
+            _, sha, current = self.store.current()
+        else:
+            sha, current = self.store.read()
+        need(current == before or (attempted is not None and current == attempted),
+             "state_changed_concurrently")
+        need(current["owner"] == self.owner == before["owner"], "monitor_lock_lost")
+        restored = deepcopy(before)
+        restored["revision"] = current["revision"] + 1
+        restored["operation_id"] = uuid.uuid4().hex
+        # Even when the first PUT was not visible, this CAS changes its old blob
+        # SHA. A late original request therefore cannot revive a sending row.
+        next_sha = self.store.write(sha, restored)
+        if isinstance(self.store, GitStore):
+            check_sha, check = self.store.confirm(next_sha, restored, sha)
+        else:
+            check_sha, check = self.store.read()
+        need(check_sha == next_sha and check == restored, "state_readback_unconfirmed")
+        self.sha, self.state = next_sha, restored
+        self._pending_write = None
+        self.uncertain = False
+        if isinstance(self.store, GitStore):
+            self.store.note("unsent_intent_restored", matched=True)
 
     @contextmanager
     def exclusive(self, recover=None):

@@ -208,9 +208,7 @@ def dispatch(journal, sender, authorization, now, receipt_log=None):
         current = journal.state["workflows"].get(row["key"])
         if row["event"] != "test" and (not current or current["signature"] != row["signature"]):
             continue
-        draft = deepcopy(journal.state)
-        draft["outbox"][eid].update(status="sending", attempted_at=m.iso(now))
-        journal.save(draft)  # Verified intent precedes the single network call.
+        journal.prepare_delivery(eid, m.iso(now))  # No network call before verified intent.
         try:
             receipt = sender.post(row["channel"], row["text"], str(uuid.UUID(eid[:32])))
             need(receipt.get("channel") == row["channel"] and re.fullmatch(r"\d+\.\d+", receipt.get("ts", "")), "slack_ack_invalid")

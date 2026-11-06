@@ -7,7 +7,7 @@
   "approval_reference": "2026-10-11 current conversation: user replied お願いします to deployment of the reviewed three per-repository monitors, the one previously approved exact test, deduplication verification and recurring alert activation. 2026-10-13 current conversation: user said 反映して良いです to the reviewed branded-search monitor correction, production deployment and verification of the existing recovery notification policy. 2026-10-15 current conversation: user replied はい to the reviewed branded monitor repair, temporarily pausing only its monitor, deploying the verified version, clearing exactly one finished legacy owner, validating without sending and resuming the existing notification policy. No business rerun or new Slack message/change. 2026-11-01 current conversation: user replied はい to production deployment of the exact reviewed receipt-recovery version 99d33a1, synchronizing this approval binding, briefly pausing only the branded monitor, resuming it after read-only validation, and verifying two ordinary scheduled runs. Existing destination, templates, alert conditions and no-resend policy remain unchanged; no test Slack message or business rerun.",
   "exception_scope": "only_these_marketing_alerts",
   "template_version": "marketing-alerts-v1",
-  "code_sha256": "79d8b33d8ffa272ef93cb23e07d5f6a7169a1cb216bfcb6826a2e7ab8498ad0e",
+  "code_sha256": "6dc9b17d0abd00ba0ba3b617330f49f43a78209657c91051641c16517117e731",
   "not_before": "2026-10-11T08:14:31.886885+00:00",
   "expires_at": null
 }

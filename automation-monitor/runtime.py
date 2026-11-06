@@ -209,6 +209,7 @@ def main():
         # Fixed descriptions only: never print URLs, API bodies or exception
         # text unless it is a reviewed, non-sensitive code.
         explanations = {
+            "monitor_delivery_not_started": ("Slack送信前に監視記録の確認で停止しました。通知は送信していません", "未送信への復旧記録を確認する。復旧済みなら次回の通常監視で再確認する"),
             "monitor_lock_requires_review": ("前回の監視処理の終了を確認できず、監視を停止しています", "前回実行の終了と通知の送信履歴を照合してから復旧する"),
             "monitor_delivery_requires_review": ("前回のSlack送信結果が未確定のため、監視を停止しています", "送信先の受信記録を照合する。結果不明の通知は再送しない"),
             "monitor_previous_run_unverified": ("前回実行の識別情報が一致しないため、監視を停止しています", "実行履歴と処理中の記録を照合する"),
